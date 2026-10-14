@@ -39,6 +39,7 @@ describe('effect signals factory', () => {
   ) => {
     effectCalled = effectCalled + 1;
     if (input.searchString === 'throw') {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
       throw 'unhandled';
     }
     let totalResults = 1;
@@ -83,7 +84,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({});
         inIds = factoryResult.input;
         outIds = factoryResult.output;
@@ -517,7 +520,7 @@ describe('effect signals factory', () => {
           page: 2,
         });
         await sequence2;
-        store.dispatch(inIds.invalidate);
+        void store.dispatch(inIds.invalidate);
       });
     });
 
@@ -613,7 +616,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({ withTrigger: true });
         inIds = factoryResult.input;
         outIds = factoryResult.output;
@@ -679,7 +684,7 @@ describe('effect signals factory', () => {
           searchString: 'test',
           page: 4,
         });
-        store.dispatch(inIds.trigger);
+        void store.dispatch(inIds.trigger);
         await sequence;
       });
     });
@@ -690,7 +695,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({
             initialResultGetter: () => ({
               results: [],
@@ -752,7 +759,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({
             effectDebounceTime: 50,
           });
@@ -823,7 +832,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({
             effectInputEquals: (a, b) => a.searchString === b.searchString,
           });
@@ -927,7 +938,9 @@ describe('effect signals factory', () => {
 
       beforeEach(() => {
         const factoryResult = factory
-          .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
+          .extendSetup((store, inIds) => {
+            store.connect(inputStateId, inIds.input);
+          })
           .build({
             wrappedEffectGetter: effect => (input, store, prevInput, prevOutput) =>
               effect(input, store, prevInput, prevOutput).pipe(

@@ -27,9 +27,9 @@ describe('Lifecycle basics', () => {
   it('should throw, if getLifecycleHandle is called from within a getLifecycle callback', () => {
     expect(() => {
       store.getLifecycleHandle(s => {
-        s.getLifecycleHandle(() => {});
+        s.getLifecycleHandle(() => undefined);
       });
-    }).toThrowError(
+    }).toThrow(
       'getLifecycleHandle cannot be called while already within a lifecycleRegistrationCallback',
     );
   });
@@ -41,14 +41,14 @@ describe('Lifecycle basics', () => {
     });
 
     const sequence = expectSequence(store.getEventStream(numberEvent), [1, 2, 1, 2]);
-    store.dispatch(triggerEvent, undefined);
-    store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
     await sequence;
 
     const sequence2 = expectSequence(store.getEventStream(numberEvent), [1, 1]);
     handle.end();
-    store.dispatch(triggerEvent, undefined);
-    store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
     await sequence2;
   });
 
@@ -75,7 +75,7 @@ describe('Lifecycle basics', () => {
     expect(isSubscribed(store, numberBehavior2)).toBe(false);
     expect(getNumberOfBehaviorSources(store, numberBehavior)).toBe(2);
     expect(getNumberOfBehaviorSources(store, numberBehavior2)).toBe(0);
-    store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
     await sequence1;
     await sequence2;
   });
@@ -93,7 +93,7 @@ describe('Lifecycle basics', () => {
     await store.dispatch(triggerEvent, undefined);
     await store.dispatch(triggerEvent, undefined);
     handle.reset();
-    store.dispatch(triggerEvent, undefined);
+    void store.dispatch(triggerEvent, undefined);
     await sequence1;
     await sequence2;
   });

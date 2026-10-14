@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { of } from 'rxjs';
-import { filter, map, mapTo, switchMap, take, tap } from 'rxjs/operators';
+import { filter, map, switchMap, take, tap } from 'rxjs/operators';
 import { Store, getEventId, getStateId } from '../src';
 import { expectSequence } from './test-utils';
 
@@ -31,9 +31,9 @@ describe('Event order', () => {
     const counterSequence = expectSequence(store.getBehavior(counterState), [0, 3, 9, 18, 19]);
 
     // as we do not await the dispatches, the last multiply is dispatched before the dispatch in the effect (add 1) is dispatched
-    store.dispatch(addEvent, 3); // => 3
-    store.dispatch(multiplyEvent, 3); // => 9
-    store.dispatch(multiplyEvent, 2); // => 18
+    void store.dispatch(addEvent, 3); // => 3
+    void store.dispatch(multiplyEvent, 3); // => 9
+    void store.dispatch(multiplyEvent, 2); // => 18
 
     await counterSequence;
   });
@@ -42,9 +42,9 @@ describe('Event order', () => {
     const counterSequence = expectSequence(store.getBehavior(counterState), [0, 3, 9, 10, 20]);
 
     // now we await the *3 dispatch and thus, the +1 dispatch from the effect comes before the *2 dispatch
-    store.dispatch(addEvent, 3); // => 3
+    void store.dispatch(addEvent, 3); // => 3
     await store.dispatch(multiplyEvent, 3); // => 9 => 10
-    store.dispatch(multiplyEvent, 2); // => 20
+    void store.dispatch(multiplyEvent, 2); // => 20
 
     await counterSequence;
   });
@@ -62,12 +62,12 @@ describe('Event order', () => {
         myEvent,
         store.getEventStream(myEvent).pipe(
           filter(v => v === 3),
-          mapTo(7),
+          map(() => 7),
         ),
       );
       store.addEventSource(myEvent, of(3, 4, 5));
       values.push(1);
-      store.dispatch(myEvent, 6);
+      void store.dispatch(myEvent, 6);
       values.push(2);
 
       await sequence;
@@ -93,8 +93,8 @@ describe('Event order', () => {
           map(e => e + 20), // 21, 22 -> 26, 41, 27, 42
         ),
       );
-      store.dispatch(myEvent, 1);
-      store.dispatch(myEvent, 2);
+      void store.dispatch(myEvent, 1);
+      void store.dispatch(myEvent, 2);
 
       await sequence;
     });

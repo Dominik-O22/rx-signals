@@ -56,7 +56,7 @@ describe('Behaviors share and reset logic', () => {
       await store.dispatch(addToRootEvent, 2); // now we have doubledBehavior listening
 
       const tripledSequence = expectSequence(store.getBehavior(tripledBehavior), [21, 30]);
-      store.dispatch(addToRootEvent, 3);
+      void store.dispatch(addToRootEvent, 3);
 
       await doubledSequence;
       await tripledSequence;
@@ -67,7 +67,7 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence2 = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const doubledSequence3 = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence1;
       await doubledSequence2;
@@ -81,14 +81,14 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence1 = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
       expect(doubledCalculated).toBe(2);
 
       const tripledSequence2 = expectSequence(store.getBehavior(tripledBehavior), [21, 30]);
 
-      store.dispatch(addToRootEvent, 3); // at this point only tripledBehavior should be listening
+      void store.dispatch(addToRootEvent, 3); // at this point only tripledBehavior should be listening
 
       await tripledSequence1;
       await tripledSequence2;
@@ -103,7 +103,7 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence1 = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30, 15]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
       expect(doubledCalculated).toBe(2);
@@ -130,11 +130,11 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
 
-      store.dispatch(addToRootEvent, 3);
+      void store.dispatch(addToRootEvent, 3);
       await tripledSequence;
 
       await expectSequence(store.getBehavior(doubledBehavior), [20]);
@@ -192,14 +192,14 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence1 = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
       expect(doubledCalculated).toBe(2);
 
       const tripledSequence2 = expectSequence(store.getBehavior(tripledBehavior), [21, 30]);
 
-      store.dispatch(addToRootEvent, 3); // at this point only tripledBehavior should be listening
+      void store.dispatch(addToRootEvent, 3); // at this point only tripledBehavior should be listening
 
       await tripledSequence1;
       await tripledSequence2;
@@ -214,7 +214,7 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence1 = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30, 15]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
       expect(doubledCalculated).toBe(2);
@@ -241,11 +241,11 @@ describe('Behaviors share and reset logic', () => {
       const doubledSequence = expectSequence(store.getBehavior(doubledBehavior), [10, 14]);
       const tripledSequence = expectSequence(store.getBehavior(tripledBehavior), [15, 21, 30]);
 
-      store.dispatch(addToRootEvent, 2);
+      void store.dispatch(addToRootEvent, 2);
 
       await doubledSequence;
 
-      store.dispatch(addToRootEvent, 3);
+      void store.dispatch(addToRootEvent, 3);
       await tripledSequence;
 
       await expectSequence(store.getBehavior(doubledBehavior), [20]);

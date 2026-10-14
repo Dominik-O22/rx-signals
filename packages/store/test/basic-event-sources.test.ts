@@ -50,8 +50,8 @@ describe('Event streams', () => {
         { type: testEvent, event: 'TEST2' },
       ]);
 
-      store.dispatch(testEvent, 'TEST1');
-      store.dispatch(testEvent, 'TEST2');
+      void store.dispatch(testEvent, 'TEST1');
+      void store.dispatch(testEvent, 'TEST2');
 
       await sequence;
     });
@@ -107,6 +107,7 @@ describe('Event streams', () => {
         interval(10).pipe(
           map(val => {
             if (val === 3) {
+              // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
               throw 'ERROR';
             }
             return String(val);
@@ -358,6 +359,7 @@ describe('Event streams', () => {
     const eNumberOrString = getEventId<number | string>();
     const eString = getEventId<string>();
     const eArray = getEventId<number[]>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pins that an any event accepts any payload
     const eAny = getEventId<any>();
     const eUndefined = getEventId<undefined>();
     const eNull = getEventId<null>();
@@ -365,56 +367,56 @@ describe('Event streams', () => {
     // const x: number = 42;
     // store.dispatch(x, 5); // error
 
-    store.dispatch(eNumber, 5);
+    void store.dispatch(eNumber, 5);
     // store.dispatch(eNumber, [5]); // error
     // store.dispatch(eNumber, ''); // error
     // store.dispatch(eNumber, null); // error
     // store.dispatch(eNumber, undefined); // error
     // store.dispatch(eNumber); // error
 
-    store.dispatch(eNumberOrNull, 5);
+    void store.dispatch(eNumberOrNull, 5);
     // store.dispatch(eNumberOrNull, [5]); // error
     // store.dispatch(eNumberOrNull, ''); // error
-    store.dispatch(eNumberOrNull, null);
+    void store.dispatch(eNumberOrNull, null);
     // store.dispatch(eNumberOrNull, undefined); // error
     // store.dispatch(eNumberOrNull); // error
 
-    store.dispatch(eNumberOrString, 5);
+    void store.dispatch(eNumberOrString, 5);
     // store.dispatch(eNumberOrString, [5]); // error
-    store.dispatch(eNumberOrString, '');
+    void store.dispatch(eNumberOrString, '');
     // store.dispatch(eNumberOrString, null); // error
     // store.dispatch(eNumberOrString, undefined); // error
     // store.dispatch(eNumberOrString); // error
 
-    store.dispatch(eString, '');
+    void store.dispatch(eString, '');
     // store.dispatch(eString, [5]); // error
     // store.dispatch(eString, 5); // error
     // store.dispatch(eString, null); // error
     // store.dispatch(eString, undefined); // error
     // store.dispatch(eString); // error
 
-    store.dispatch(eArray, [5]);
+    void store.dispatch(eArray, [5]);
     // store.dispatch(eArray, ['5']); // error
     // store.dispatch(eArray, ''); // error
     // store.dispatch(eArray, null); // error
     // store.dispatch(eArray, undefined); // error
     // store.dispatch(eArray); // error
 
-    store.dispatch(eAny, 5);
-    store.dispatch(eAny, [5]);
-    store.dispatch(eAny, '');
-    store.dispatch(eAny, null);
-    store.dispatch(eAny, undefined);
-    store.dispatch(eAny);
+    void store.dispatch(eAny, 5);
+    void store.dispatch(eAny, [5]);
+    void store.dispatch(eAny, '');
+    void store.dispatch(eAny, null);
+    void store.dispatch(eAny, undefined);
+    void store.dispatch(eAny);
 
-    store.dispatch(eUndefined, undefined);
+    void store.dispatch(eUndefined, undefined);
     // store.dispatch(eUndefined, [5]); // error
     // store.dispatch(eUndefined, ''); // error
     // store.dispatch(eUndefined, null); // error
-    store.dispatch(eUndefined, undefined);
-    store.dispatch(eUndefined);
+    void store.dispatch(eUndefined, undefined);
+    void store.dispatch(eUndefined);
 
-    store.dispatch(eNull, null);
+    void store.dispatch(eNull, null);
     // store.dispatch(eNull, [5]); // error
     // store.dispatch(eNull, ''); // error
     // store.dispatch(eNull, undefined); // error

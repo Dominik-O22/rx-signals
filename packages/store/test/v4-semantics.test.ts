@@ -4,6 +4,7 @@ import {
   getDerivedId,
   getEventId,
   getStateId,
+  type NoIds,
   SignalsFactory,
   Store,
   type DerivedId,
@@ -181,7 +182,7 @@ describe('lifecycles', () => {
 
 describe('SignalsFactory config', () => {
   type Named = { name: string };
-  const named = new SignalsFactory<{}, { name: DerivedId<string> }, Named>(config => {
+  const named = new SignalsFactory<NoIds, { name: DerivedId<string> }, Named>(config => {
     const name = getDerivedId<string>();
     return {
       input: {},

@@ -3,16 +3,16 @@ import { NEVER } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { getDerivedId, Store } from '../src';
 describe('use the store for dependency injection', () => {
-  interface IMyService {
-    execute: (callback: () => any) => void;
-  }
+  type IMyService = {
+    execute: (callback: () => unknown) => void;
+  };
   const IMyServiceIdentifier = getDerivedId<IMyService>();
 
   let constructed = 0;
   const concreteServiceConstructor = () => {
     constructed = constructed + 1;
     return {
-      execute: (callback: () => any) => callback(),
+      execute: (callback: () => unknown) => callback(),
     };
   };
 

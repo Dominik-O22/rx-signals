@@ -23,7 +23,7 @@ describe('Behavior basics', () => {
       store.addDerivedState(testId, NEVER);
       expect(() => {
         store.addDerivedState(testId, NEVER);
-      }).toThrowError(
+      }).toThrow(
         'A behavior or event source with the given identifier has already been added: D_1',
       );
     });
@@ -64,7 +64,7 @@ describe('Behavior basics', () => {
       store.addState(testId, 42);
       expect(() => {
         store.addState(testId, 42);
-      }).toThrowError(
+      }).toThrow(
         'A behavior or event source with the given identifier has already been added: S_1',
       );
     });
@@ -101,6 +101,7 @@ describe('Behavior basics', () => {
         interval(10).pipe(
           map(val => {
             if (val === 3) {
+              // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
               throw 'ERROR';
             }
             return val;

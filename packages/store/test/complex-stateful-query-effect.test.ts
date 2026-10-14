@@ -11,7 +11,7 @@ describe('Stateful query pattern', () => {
   };
 
   type ResultType = {
-    result: Array<number | QueryType>;
+    result: (number | QueryType)[];
     resultQuery: QueryType | null;
   };
 
@@ -62,7 +62,7 @@ describe('Stateful query pattern', () => {
     store.addEventSource(resultEvent, eventSource);
   });
 
-  it('should automatically subscribe query and result', async () => {
+  it('should automatically subscribe query and result', () => {
     expect(isSubscribed(store, resultBehavior)).toBe(false);
     expect(isSubscribed(store, queryBehavior)).toBe(true);
   });

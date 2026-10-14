@@ -53,7 +53,7 @@ describe('Cyclic dependencies all lazy', () => {
     expect(isSubscribed(store, derivedBehavior)).toBe(true);
     expect(isSubscribed(store, inputEvent)).toBe(true);
 
-    store.dispatch(inputEvent, 1);
+    void store.dispatch(inputEvent, 1);
 
     await sequence;
 
@@ -65,7 +65,7 @@ describe('Cyclic dependencies all lazy', () => {
   it('should not change, if second event sent while unsubscribed', async () => {
     const sequence = expectSequence(store.getBehavior(derivedBehavior), [10, 1000]);
 
-    store.dispatch(inputEvent, 1);
+    void store.dispatch(inputEvent, 1);
 
     await sequence;
 
@@ -77,7 +77,7 @@ describe('Cyclic dependencies all lazy', () => {
   it('should get correct value on dispatch after resubscribe', async () => {
     const sequence = expectSequence(store.getBehavior(derivedBehavior), [10, 1000]);
 
-    store.dispatch(inputEvent, 1);
+    void store.dispatch(inputEvent, 1);
 
     await sequence;
 

@@ -15,6 +15,7 @@ describe('completeAllSignals', () => {
   };
 
   const id = getStateId<number>();
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- apps declare void events
   const calculateEvent = getEventId<void>();
 
   let observable: Observable<number>;
@@ -31,9 +32,9 @@ describe('completeAllSignals', () => {
 
   it('should not do anything after a call to completeAllSignals', async () => {
     const sequence = expectSequence(observable, [1, 2, 4, 8]);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence;
     await expectSequence(observable, [8]);
     expect(calculationCalled).toBe(3);
@@ -45,8 +46,8 @@ describe('completeAllSignals', () => {
       merge(store.getEventStream(calculateEvent).pipe(map(() => 3)), observable),
       [3, 3],
     );
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence2;
     expect(calculationCalled).toBe(3);
     expect(isSubscribed(store, calculateEvent)).toBe(false);

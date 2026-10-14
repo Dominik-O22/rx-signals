@@ -75,9 +75,9 @@ describe('testing documentation', () => {
     setup(store);
 
     const sequence = expectSequence(store.getBehavior(output.to), [0, 1, 2, 1]);
-    store.dispatch(input.inc);
-    store.dispatch(input.inc);
-    store.dispatch(input.dec);
+    void store.dispatch(input.inc);
+    void store.dispatch(input.inc);
+    void store.dispatch(input.dec);
 
     await sequence;
   });
@@ -97,9 +97,9 @@ describe('testing documentation', () => {
     setup(store);
 
     const sequence = expectSequence(store.getBehavior(output.to), [0, 1, 2, 1]);
-    store.dispatch(input.incTo);
-    store.dispatch(input.incTo);
-    store.dispatch(input.decTo);
+    void store.dispatch(input.incTo);
+    void store.dispatch(input.incTo);
+    void store.dispatch(input.decTo);
 
     await sequence;
   });
@@ -116,9 +116,9 @@ describe('testing documentation', () => {
         [1, 2], // incFrom
       ],
     );
-    store.dispatch(randomNumberSignals.input.incTo);
-    store.dispatch(randomNumberSignals.input.incTo);
-    store.dispatch(randomNumberSignals.input.incFrom);
+    void store.dispatch(randomNumberSignals.input.incTo);
+    void store.dispatch(randomNumberSignals.input.incTo);
+    void store.dispatch(randomNumberSignals.input.incFrom);
 
     await sequence;
   });
@@ -134,9 +134,9 @@ describe('testing documentation', () => {
       ),
       [undefined, 0, 10, 20, 21],
     );
-    store.dispatch(randomNumberSignals.input.incTo);
-    store.dispatch(randomNumberSignals.input.incTo);
-    store.dispatch(randomNumberSignals.input.incFrom);
+    void store.dispatch(randomNumberSignals.input.incTo);
+    void store.dispatch(randomNumberSignals.input.incTo);
+    void store.dispatch(randomNumberSignals.input.incFrom);
 
     await sequence;
   });

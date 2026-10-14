@@ -23,8 +23,8 @@ describe('Connect basics', () => {
     const sequence = expectSequence(store.getEventStream(targetEventId), [7, 42]);
     await store.dispatch(sourceEventId, 7); // not missed
     store.removeEventSource(targetEventSource);
-    store.dispatch(sourceEventId, 9); // missed, due to removed source
-    store.dispatch(targetEventId, 42); // to verify that 9 was missed
+    void store.dispatch(sourceEventId, 9); // missed, due to removed source
+    void store.dispatch(targetEventId, 42); // to verify that 9 was missed
     await sequence;
   });
 
@@ -32,8 +32,8 @@ describe('Connect basics', () => {
     const targetBehaviorId = getStateId<number | null>();
 
     it('should return void', () => {
-      const test: void = store.connect(sourceEventId, targetBehaviorId);
-      expect(typeof test).toBe('undefined');
+      // eslint-disable-next-line @typescript-eslint/no-confusing-void-expression -- the void result is the subject
+      expect(typeof store.connect(sourceEventId, targetBehaviorId)).toBe('undefined');
     });
 
     it('should connect event to behavior, subscribing the target eagerly', async () => {
@@ -43,7 +43,7 @@ describe('Connect basics', () => {
       expect(isSubscribed(store, targetBehaviorId)).toBe(true);
       await store.dispatch(sourceEventId, 5); // not missed, due to eager subscription
       const sequence = expectSequence(store.getBehavior(targetBehaviorId), [5, 7]);
-      store.dispatch(sourceEventId, 7);
+      void store.dispatch(sourceEventId, 7);
       await sequence;
     });
   });
@@ -58,7 +58,7 @@ describe('Connect basics', () => {
       expect(isSubscribed(store, targetBehaviorId)).toBe(false);
       await store.dispatch(sourceEventId, 5); // missed, due to laziy subscription
       const sequence = expectSequence(store.getBehavior(targetBehaviorId), [7]);
-      store.dispatch(sourceEventId, 7);
+      void store.dispatch(sourceEventId, 7);
       await sequence;
     });
 
@@ -69,7 +69,7 @@ describe('Connect basics', () => {
       expect(isSubscribed(store, targetBehaviorId)).toBe(false);
       const sequence = expectSequence(store.getBehavior(targetBehaviorId), [3, 7]);
       expect(isSubscribed(store, targetBehaviorId)).toBe(true);
-      store.dispatch(sourceEventId, 7);
+      void store.dispatch(sourceEventId, 7);
       await sequence;
     });
   });
@@ -83,7 +83,7 @@ describe('Connect basics', () => {
       expect(getNumberOfBehaviorSources(store, targetBehaviorId)).toBe(1);
       expect(isSubscribed(store, targetBehaviorId)).toBe(true);
       const sequence = expectSequence(store.getBehavior(targetBehaviorId), [3, 7]);
-      store.dispatch(sourceEventId, 7);
+      void store.dispatch(sourceEventId, 7);
       await sequence;
     });
   });

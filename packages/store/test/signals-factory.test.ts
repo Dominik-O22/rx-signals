@@ -100,8 +100,8 @@ describe('SignalsFactory', () => {
       const myEvent = getEventId<number>();
       const signals = baseFactory.addInputId('newKey', () => myEvent).build({});
       const sequence = expectSequence(store.getEventStream(signals.input.newKey), [5, 7]);
-      store.dispatch(myEvent, 5);
-      store.dispatch(myEvent, 7);
+      void store.dispatch(myEvent, 5);
+      void store.dispatch(myEvent, 7);
       await sequence;
     });
 
@@ -109,8 +109,8 @@ describe('SignalsFactory', () => {
       const myEvent = getEventId<number>();
       const signals = baseFactory.addOutputId('newKey', () => myEvent).build({});
       const sequence = expectSequence(store.getEventStream(signals.output.newKey), [5, 7]);
-      store.dispatch(myEvent, 5);
-      store.dispatch(myEvent, 7);
+      void store.dispatch(myEvent, 5);
+      void store.dispatch(myEvent, 7);
       await sequence;
     });
 
@@ -129,8 +129,8 @@ describe('SignalsFactory', () => {
       const signals = baseFactory.renameInputId('inputA', 'test').build({});
       const sequence = expectSequence(store.getBehavior(signals.input.test), [5, 7]);
       store.connect(myEvent, signals.input.test);
-      store.dispatch(myEvent, 5);
-      store.dispatch(myEvent, 7);
+      void store.dispatch(myEvent, 5);
+      void store.dispatch(myEvent, 7);
       await sequence;
     });
 
@@ -141,8 +141,8 @@ describe('SignalsFactory', () => {
       store.connect(myEvent, signals.input.inputA);
       store.connect(myEvent, signals.input.inputB);
       signals.setup(store);
-      store.dispatch(myEvent, 5);
-      store.dispatch(myEvent, 7);
+      void store.dispatch(myEvent, 5);
+      void store.dispatch(myEvent, 7);
       await sequence;
     });
   });
@@ -200,8 +200,8 @@ describe('SignalsFactory', () => {
         .build({});
       signals.setup(store);
       const sequence = expectSequence(store.getBehavior(signals.output.outputC), [5, 7]);
-      store.dispatch(myEvent, 5);
-      store.dispatch(myEvent, 7);
+      void store.dispatch(myEvent, 5);
+      void store.dispatch(myEvent, 7);
       await sequence;
     });
 
