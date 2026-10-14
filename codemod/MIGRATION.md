@@ -258,6 +258,24 @@ The two rc23 dependencies are replaced in place.
 
 `package-lock.json` is updated by `npm install`, not by the script.
 
+### R13 Id types of any value
+
+rc23 ids were covariant, so `BehaviorId<unknown>` accepted every behavior id. v4 ids are exact. The type for "any id of this kind" has its own name, and `getBehavior` and `getEventStream` accept it.
+
+| rc23                                               | v4              |
+| -------------------------------------------------- | --------------- |
+| `StateId<unknown>`, `StateId<any>`                 | `AnyStateId`    |
+| `BehaviorId<unknown>`, `BehaviorId<any>`           | `AnyBehaviorId` |
+| `EventId<unknown>`, `EventId<any>`                 | `AnyEventId`    |
+| `SignalId<unknown>`, `SignalId<any>`               | `AnySignalId`   |
+| `EffectId<unknown, unknown>`, `EffectId<any, any>` | `AnyEffectId`   |
+
+`DerivedId<unknown>` stays. If the compiler then complains, use `AnyBehaviorId`.
+
+### R14 Generic helpers infer from the id
+
+A helper like `emit<T>(id: EventId<T>, event: T)` used to accept `emit(added, { kind: 'info', text })`. With exact v4 ids, TypeScript infers `T` from the object literal instead (`kind: string`), and the id no longer fits. The script writes `event: NoInfer<T>`, so `T` comes from the id alone. It does this for every generic function where one parameter is an id of `T` and another parameter is plain `T`. `NoInfer` needs TypeScript 5.4 or newer.
+
 ## Removed exports
 
 These rc23 exports have no v4 export. The script rewrites the uses in the left column of R6, R7 and R10. Anything else shows up as error C1.
@@ -381,11 +399,9 @@ These compile and run, but behave differently. Most are rc23 bug fixes. The scri
 
 ## What the fixture app needed
 
-The repository's fixture app (`fixtures/angular19-rc23`) mirrors the real app's use of rx-signals. 20 of its 25 TypeScript files use rx-signals. The script changed all 20. After it, 4 files needed hand edits.
+The repository's fixture app (`fixtures/angular19-rc23`) mirrors the real app's use of rx-signals. 20 of its 25 TypeScript files use rx-signals. The script changed all 20 and marked 4 behavior changes to check. After it, 2 files needed a hand edit, both `C5`:
 
-- `core/notification.service.ts`, C4. A private `emit<T>(id: EventId<T>, event: T)` helper. Fix: `event: NoInfer<T>`.
-- `selftest/probe.ts`, C4. `keepHot(store, ids: ReadonlyArray<BehaviorId<unknown>>)` received ids of six value types. Fix: `BehaviorId<any>`.
-- `selftest/selftest.service.ts`, C5. `String(e.error?.message ?? e.error)`. Fix: narrow with `instanceof Error`.
-- `features/auswertung/auswertung-signals.factory.ts`, C5. The same pattern in an error notification.
+- `selftest/selftest.service.ts`. `String(e.error?.message ?? e.error)`. Fix: `e.error instanceof Error ? e.error.message : String(e.error)`.
+- `features/auswertung/auswertung-signals.factory.ts`. The same pattern in an error notification.
 
-`fixture-hand-edits.patch` holds exactly these edits. `node scripts/fixture-gate.mjs --migrate` runs the script on a copy of the fixture, applies the patch, installs the v4 packages built from this repository, and checks the result against the rc23 baseline.
+`fixture-hand-edits.patch` holds exactly these edits. `node scripts/fixture-gate.mjs --migrate` runs the script on a copy of the fixture, applies the patch, deletes the verify markers, installs the v4 packages built from this repository, requires `--check` to print "Done", and checks the result against the rc23 baseline.

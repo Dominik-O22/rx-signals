@@ -67,6 +67,14 @@ const V4 = {
   configurationType: 'object', // Configuration -> object
   signalIdType: 'SignalId', // ToSignalId<X> -> SignalId<ToSignalIdValueType<X>>
   signalIdValueType: 'ToSignalIdValueType',
+  // R13: an id type of unknown/any value (rc23's "any id of this kind") -> the v4 top type
+  anyIdTypes: {
+    StateId: 'AnyStateId',
+    BehaviorId: 'AnyBehaviorId',
+    EventId: 'AnyEventId',
+    SignalId: 'AnySignalId',
+    EffectId: 'AnyEffectId',
+  },
   // R11: RxSignalsStoreModule in `imports` -> provider function in `providers`
   provideRootStore: 'provideRootStore',
   provideChildStore: 'provideChildStore',
@@ -126,6 +134,7 @@ function createFileContext(ts, checker, sf, appDir) {
     matches: [],
     manual: [],
     markers: [],
+    replacedTypes: new Set(), // local import names a rule replaced: dropped if no use is left
     imports: readImports(ts, sf),
     addedImports: new Map(),
   };
@@ -581,6 +590,70 @@ const R10 = {
 };
 
 /**
+ * R13: `BehaviorId<unknown>` and friends. rc23's ids were covariant, so `BehaviorId<unknown>`
+ * accepted every behavior id. v4 ids are exact; the type for "any behavior id" is AnyBehaviorId,
+ * which store.getBehavior and getEventStream accept (they return Observable<unknown>).
+ */
+const R13 = {
+  id: 'R13',
+  title: 'id types of any value',
+  visit(node, ctx) {
+    const { ts } = ctx;
+    if (!ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName)) return;
+    const binding = rc23Binding(ctx, node.typeName);
+    const target = binding && V4.anyIdTypes[binding.imported];
+    if (!target || node.typeName.text !== binding.imported) return;
+    const loose = [ts.SyntaxKind.UnknownKeyword, ts.SyntaxKind.AnyKeyword];
+    const args = node.typeArguments ?? [];
+    if (args.length === 0 || !args.every(a => loose.includes(a.kind))) return;
+    replace(ctx, 'R13', node.getStart(ctx.sf), node.getEnd(), target);
+    addImport(ctx, V4.storePackage, target);
+    ctx.replacedTypes.add(binding.imported);
+    match(ctx, 'R13', node, `${text(ctx, node)} -> ${target}`);
+  },
+};
+
+/**
+ * R14: generic helpers like `emit<T>(id: EventId<T>, event: T)`. With exact v4 ids, a call with an
+ * object literal infers T from the literal (`kind: string`) and no longer matches the id. NoInfer
+ * makes T come from the id alone, which is what the helper always meant.
+ */
+const ID_TYPES = new Set(['StateId', 'DerivedId', 'BehaviorId', 'EventId', 'SignalId', 'EffectId']);
+const R14 = {
+  id: 'R14',
+  title: 'infer generic helpers from the id',
+  visit(node, ctx) {
+    const { ts } = ctx;
+    if (!ts.isFunctionLike(node) || !node.typeParameters || !node.parameters) return;
+    const isTypeParam = name => node.typeParameters.some(p => p.name.text === name);
+    const fromId = new Set(); // type parameters that some id parameter fixes
+    for (const parameter of node.parameters) {
+      const type = parameter.type;
+      if (!type || !ts.isTypeReferenceNode(type) || !ts.isIdentifier(type.typeName)) continue;
+      const binding = rc23Binding(ctx, type.typeName);
+      if (!binding || !ID_TYPES.has(binding.imported)) continue;
+      for (const argument of type.typeArguments ?? []) {
+        if (ts.isTypeReferenceNode(argument) && ts.isIdentifier(argument.typeName))
+          fromId.add(argument.typeName.text);
+      }
+    }
+    for (const parameter of node.parameters) {
+      const type = parameter.type;
+      if (!type || !ts.isTypeReferenceNode(type) || !ts.isIdentifier(type.typeName)) continue;
+      const name = type.typeName.text;
+      if (type.typeArguments || !isTypeParam(name) || !fromId.has(name)) continue;
+      replace(ctx, 'R14', type.getStart(ctx.sf), type.getEnd(), `NoInfer<${name}>`);
+      match(
+        ctx,
+        'R14',
+        parameter,
+        `${text(ctx, parameter)} -> ${parameter.name.getText(ctx.sf)}: NoInfer<${name}>`,
+      );
+    }
+  },
+};
+
+/**
  * R11: RxSignalsStoreModule in the `imports` of an @NgModule or TestBed.configureTestingModule
  * moves to `providers`:
  *   RxSignalsStoreModule.withRootStore(a, b) -> provideRootStore(a, b)
@@ -740,7 +813,7 @@ const TRIGGERS = {
   },
 };
 
-const RULES = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11];
+const RULES = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R13, R14];
 
 const RULE_TITLES = Object.fromEntries([
   ...RULES.map(r => [r.id, r.title]),
@@ -772,6 +845,7 @@ function finishImports(ctx) {
       const imported = (element.propertyName ?? element.name).text;
       const local = element.name.text;
       if (REMOVED_EXPORTS.has(imported) && !leftovers.has(local)) continue;
+      if (ctx.replacedTypes.has(local) && !hasUncoveredUse(ctx, local)) continue;
       const renamed = V4.typeRenames[imported] ?? imported;
       specifiers.push({
         typeOnly: element.isTypeOnly,
@@ -873,6 +947,22 @@ function removedExportLeftovers(ctx) {
 // ---------------------------------------------------------------------------------------------
 // Applying edits
 // ---------------------------------------------------------------------------------------------
+
+/** True when `local` is still referenced outside the text that rules replaced. */
+function hasUncoveredUse(ctx, local) {
+  const { ts, sf } = ctx;
+  let used = false;
+  const visit = node => {
+    if (used || ts.isImportDeclaration(node)) return;
+    if (ts.isIdentifier(node) && node.text === local) {
+      const start = node.getStart(sf);
+      used = !ctx.edits.some(e => e.end > e.start && e.start <= start && node.getEnd() <= e.end);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return used;
+}
 
 /**
  * Applies edits back to front. At one position, insertions come before a replacement that starts

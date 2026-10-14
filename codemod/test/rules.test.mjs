@@ -543,3 +543,61 @@ export const f = getEffectSignalsFactory<number, string>().build({ withTrigger: 
     );
   });
 });
+
+describe('R13 id types of any value', () => {
+  test('turns XId<unknown> and XId<any> into the v4 top types and drops the unused import', () => {
+    const input = `import { BehaviorId, EffectId, EventId, Store } from '@rx-signals/store';
+export const keepHot = (store: Store, ids: ReadonlyArray<BehaviorId<unknown>>) =>
+  ids.map(id => store.getBehavior(id));
+export type Effects = Record<string, EffectId<any, any>>;
+export type Events = EventId<unknown>[];
+export type Count = EventId<number>;
+`;
+    assert.equal(
+      migrateSource(input),
+      `import { AnyBehaviorId, AnyEffectId, AnyEventId, EventId, Store } from '@rx-signals-next/store';
+export const keepHot = (store: Store, ids: ReadonlyArray<AnyBehaviorId>) =>
+  ids.map(id => store.getBehavior(id));
+export type Effects = Record<string, AnyEffectId>;
+export type Events = AnyEventId[];
+export type Count = EventId<number>;
+`,
+    );
+  });
+
+  test('leaves DerivedId<unknown> alone: v4 has no top type for it', () => {
+    const input = `import { DerivedId } from '@rx-signals/store';
+export type D = DerivedId<unknown>;
+`;
+    assert.equal(
+      migrateSource(input),
+      input.replace('@rx-signals/store', '@rx-signals-next/store'),
+    );
+  });
+});
+
+describe('R14 infer generic helpers from the id', () => {
+  test('makes a plain T parameter NoInfer when an id parameter fixes T', () => {
+    const input = `import { EventId, Store } from '@rx-signals/store';
+export class Notifications {
+  constructor(private readonly store: Store) {}
+  private emit<T>(eventId: EventId<T>, event: T): void {
+    this.store.dispatch(eventId, event);
+  }
+}
+export const log = <T>(value: T, label: string): T => value;
+`;
+    assert.equal(
+      migrateSource(input),
+      `import { EventId, Store } from '@rx-signals-next/store';
+export class Notifications {
+  constructor(private readonly store: Store) {}
+  private emit<T>(eventId: EventId<T>, event: NoInfer<T>): void {
+    this.store.dispatch(eventId, event);
+  }
+}
+export const log = <T>(value: T, label: string): T => value;
+`,
+    );
+  });
+});
