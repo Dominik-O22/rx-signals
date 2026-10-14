@@ -1,0 +1,23 @@
+<section class="berichte">
+  <h2>{{ titel$ | async }}</h2>
+  <p>Angemeldet: {{ (user$ | async)?.name ?? '-' }}</p>
+  @if (filter$ | async; as filter) {
+    <select [value]="filter.zeitraum" (change)="onZeitraumChange($any($event.target).value)">
+      <option value="monat">Monat</option>
+      <option value="quartal">Quartal</option>
+      <option value="jahr">Jahr</option>
+    </select>
+    <label>
+      <input type="checkbox" [checked]="filter.nurEigene" (change)="toggleNurEigene($any($event.target).checked)" />
+      nur eigene
+    </label>
+  }
+  <ul>
+    @for (bericht of liste$ | async; track bericht.id) {
+      <li [class.selected]="bericht.id === (selected$ | async)" (click)="open(bericht)">{{ bericht.titel }}</li>
+    }
+  </ul>
+  @if (selected$ | async) {
+    <button type="button" (click)="close()">Schliessen</button>
+  }
+</section>

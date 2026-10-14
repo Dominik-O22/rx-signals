@@ -1,0 +1,24 @@
+<header>
+  @if (header$ | async; as header) {
+    <span>{{ header.userName ?? 'nicht angemeldet' }} ({{ header.locale }})</span>
+    <span>{{ header.notificationCount }} Meldungen</span>
+  }
+  @if (lastLogin$ | async; as user) {
+    <span>Letzte Anmeldung: {{ user.id }}</span>
+  }
+  <button type="button" (click)="logout()">Abmelden</button>
+  <a routerLink="/berichte">Berichte</a>
+</header>
+<ul class="notifications">
+  @for (n of notifications$ | async; track $index) {
+    <li [class]="n.kind">{{ n.text }} <button type="button" (click)="dismiss($index)">x</button></li>
+  }
+</ul>
+<main>
+  <app-auswertung />
+  <app-kostenstelle-edit />
+  <router-outlet />
+</main>
+@if (report !== null) {
+  <pre id="report">{{ report }}</pre>
+}

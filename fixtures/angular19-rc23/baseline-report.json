@@ -1,0 +1,534 @@
+{
+  "appConfig": {
+    "pageSize": 3,
+    "currency": "EUR",
+    "environment": "fixture"
+  },
+  "session": {
+    "headerBefore": {
+      "userName": null,
+      "locale": "de",
+      "notificationCount": 0
+    },
+    "user": {
+      "id": "u-100",
+      "name": "Petra Lindner",
+      "roles": [
+        "controller"
+      ]
+    },
+    "headerAfterLogin": {
+      "userName": "Petra Lindner",
+      "locale": "de",
+      "notificationCount": 1
+    },
+    "lastLoginUser": {
+      "id": "u-100",
+      "name": "Petra Lindner",
+      "roles": [
+        "controller"
+      ]
+    },
+    "notificationsAfterDismiss": [
+      {
+        "kind": "info",
+        "text": "Selbsttest gestartet"
+      }
+    ],
+    "localeDelivered": true,
+    "headerAfterLocale": {
+      "userName": "Petra Lindner",
+      "locale": "en",
+      "notificationCount": 1
+    }
+  },
+  "auswertung": {
+    "initial": {
+      "currentInput": {
+        "jahr": 2023,
+        "kostenstelle": "KST-100",
+        "sortierung": "konto"
+      },
+      "result": {
+        "zeilen": [],
+        "summe": 0
+      },
+      "resultPending": false
+    },
+    "initialSummary": {
+      "filterLabel": "KST-100/2023",
+      "rowCount": 0,
+      "summe": 0,
+      "stale": true
+    },
+    "untriggered": {
+      "currentInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-100",
+        "sortierung": "konto"
+      },
+      "result": {
+        "zeilen": [],
+        "summe": 0
+      },
+      "resultPending": false
+    },
+    "apiCallsBeforeRefresh": 1,
+    "loaded": {
+      "currentInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-100",
+        "sortierung": "konto"
+      },
+      "result": {
+        "zeilen": [
+          {
+            "konto": "4000",
+            "bezeichnung": "Personal",
+            "betrag": 52000
+          },
+          {
+            "konto": "4100",
+            "bezeichnung": "Reisekosten",
+            "betrag": 3400
+          },
+          {
+            "konto": "4200",
+            "bezeichnung": "Software",
+            "betrag": 12800
+          },
+          {
+            "konto": "4300",
+            "bezeichnung": "Schulungen",
+            "betrag": 2100
+          },
+          {
+            "konto": "4400",
+            "bezeichnung": "Miete",
+            "betrag": 18000
+          }
+        ],
+        "summe": 88300
+      },
+      "resultInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-100",
+        "sortierung": "konto"
+      },
+      "resultPending": false
+    },
+    "firstPage": {
+      "index": 0,
+      "size": 3,
+      "pageCount": 2,
+      "items": [
+        {
+          "konto": "4000",
+          "bezeichnung": "Personal",
+          "betrag": 52000
+        },
+        {
+          "konto": "4100",
+          "bezeichnung": "Reisekosten",
+          "betrag": 3400
+        },
+        {
+          "konto": "4200",
+          "bezeichnung": "Software",
+          "betrag": 12800
+        }
+      ]
+    },
+    "secondPage": {
+      "index": 1,
+      "size": 3,
+      "pageCount": 2,
+      "items": [
+        {
+          "konto": "4300",
+          "bezeichnung": "Schulungen",
+          "betrag": 2100
+        },
+        {
+          "konto": "4400",
+          "bezeichnung": "Miete",
+          "betrag": 18000
+        }
+      ]
+    },
+    "resortedPage": {
+      "index": 1,
+      "size": 3,
+      "pageCount": 2,
+      "items": [
+        {
+          "konto": "4100",
+          "bezeichnung": "Reisekosten",
+          "betrag": 3400
+        },
+        {
+          "konto": "4300",
+          "bezeichnung": "Schulungen",
+          "betrag": 2100
+        }
+      ]
+    },
+    "summaryAfterSort": {
+      "filterLabel": "KST-100/2024",
+      "rowCount": 5,
+      "summe": 88300,
+      "stale": false
+    },
+    "apiCallsAfterSort": 2,
+    "staleSummary": {
+      "filterLabel": "KST-ERR/2024",
+      "rowCount": 5,
+      "summe": 88300,
+      "stale": true
+    },
+    "afterError": {
+      "currentInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-ERR",
+        "sortierung": "betrag"
+      },
+      "resultInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-ERR",
+        "sortierung": "betrag"
+      },
+      "resultPending": false
+    },
+    "errors": [
+      {
+        "message": "500 auswertung backend unavailable",
+        "input": {
+          "jahr": 2024,
+          "kostenstelle": "KST-ERR",
+          "sortierung": "betrag"
+        }
+      }
+    ],
+    "kst200": {
+      "currentInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      },
+      "result": {
+        "zeilen": [
+          {
+            "konto": "4000",
+            "bezeichnung": "Personal",
+            "betrag": 31000
+          },
+          {
+            "konto": "4500",
+            "bezeichnung": "Marketing",
+            "betrag": 7600
+          }
+        ],
+        "summe": 38600
+      },
+      "resultInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      },
+      "resultPending": false
+    },
+    "afterInvalidate": {
+      "currentInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      },
+      "result": {
+        "zeilen": [
+          {
+            "konto": "4000",
+            "bezeichnung": "Personal",
+            "betrag": 31000
+          },
+          {
+            "konto": "4500",
+            "bezeichnung": "Marketing",
+            "betrag": 7600
+          }
+        ],
+        "summe": 38600
+      },
+      "resultInput": {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      },
+      "resultPending": false
+    },
+    "successInputs": [
+      {
+        "jahr": 2024,
+        "kostenstelle": "KST-100",
+        "sortierung": "konto"
+      },
+      {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      },
+      {
+        "jahr": 2024,
+        "kostenstelle": "KST-200",
+        "sortierung": "betrag"
+      }
+    ]
+  },
+  "kostenstelle": {
+    "empty": {
+      "currentInput": {
+        "nummer": "",
+        "bezeichnung": "",
+        "verantwortlich": "",
+        "budget": 0
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "",
+        "bezeichnung": "",
+        "verantwortlich": "",
+        "budget": 0
+      },
+      "validationResult": {
+        "nummer": "Format KST-0000",
+        "bezeichnung": "mindestens 3 Zeichen",
+        "budget": "muss positiv sein"
+      },
+      "isValid": false,
+      "resultPending": false
+    },
+    "loaded": {
+      "currentInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationResult": null,
+      "isValid": true,
+      "resultPending": false
+    },
+    "saveDelivered": true,
+    "saved": {
+      "currentInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationResult": null,
+      "isValid": true,
+      "resultPending": false,
+      "resultInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "result": {
+        "id": "id-KST-4711",
+        "nummer": "KST-4711",
+        "version": 2
+      }
+    },
+    "edited": {
+      "currentInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationResult": null,
+      "isValid": true,
+      "resultPending": false,
+      "resultInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "result": {
+        "id": "id-KST-4711",
+        "nummer": "KST-4711",
+        "version": 2
+      }
+    },
+    "savedAgain": {
+      "currentInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "validationResult": null,
+      "isValid": true,
+      "resultPending": false,
+      "resultInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "result": {
+        "id": "id-KST-4711",
+        "nummer": "KST-4711",
+        "version": 3
+      }
+    },
+    "invalid": {
+      "currentInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": -1
+      },
+      "validationPending": false,
+      "validatedInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": -1
+      },
+      "validationResult": {
+        "budget": "muss positiv sein"
+      },
+      "isValid": false,
+      "resultPending": false,
+      "resultInput": {
+        "nummer": "KST-4711",
+        "bezeichnung": "Vertrieb Nord-Ost",
+        "verantwortlich": "P. Lindner",
+        "budget": 125000
+      },
+      "result": {
+        "id": "id-KST-4711",
+        "nummer": "KST-4711",
+        "version": 3
+      }
+    }
+  },
+  "berichte": {
+    "childParentIsRoot": true,
+    "titelEn": "Reports (monat) for Petra Lindner",
+    "listeMonat": [
+      {
+        "id": "B-1",
+        "titel": "Kostenstellenbericht (monat)",
+        "zeitraum": "monat"
+      },
+      {
+        "id": "B-2",
+        "titel": "Budgetabweichung (monat)",
+        "zeitraum": "monat"
+      },
+      {
+        "id": "B-3",
+        "titel": "Personalkosten (monat)",
+        "zeitraum": "monat"
+      }
+    ],
+    "listeQuartal": [
+      {
+        "id": "B-1",
+        "titel": "Kostenstellenbericht (quartal)",
+        "zeitraum": "quartal"
+      },
+      {
+        "id": "B-2",
+        "titel": "Budgetabweichung (quartal)",
+        "zeitraum": "quartal"
+      },
+      {
+        "id": "B-3",
+        "titel": "Personalkosten (quartal)",
+        "zeitraum": "quartal"
+      }
+    ],
+    "titelDe": "Berichte (quartal) fuer Petra Lindner",
+    "selected": "B-2",
+    "closed": null,
+    "parentEventViaChild": false
+  },
+  "logout": {
+    "header": {
+      "userName": null,
+      "locale": "de",
+      "notificationCount": 0
+    },
+    "notifications": []
+  },
+  "auditLog": [
+    "login:u-100"
+  ],
+  "notificationEvents": [
+    {
+      "kind": "info",
+      "text": "Willkommen, Petra Lindner"
+    },
+    {
+      "kind": "info",
+      "text": "Selbsttest gestartet"
+    },
+    {
+      "kind": "error",
+      "text": "Auswertung KST-ERR/2024 fehlgeschlagen: 500 auswertung backend unavailable"
+    },
+    {
+      "kind": "success",
+      "text": "Kostenstelle KST-4711 gespeichert (v2)"
+    },
+    {
+      "kind": "success",
+      "text": "Kostenstelle KST-4711 gespeichert (v3)"
+    }
+  ],
+  "apiCalls": [
+    "GET /users/u-100",
+    "GET /auswertung?jahr=2024&kst=KST-100",
+    "GET /auswertung?jahr=2024&kst=KST-ERR",
+    "GET /auswertung?jahr=2024&kst=KST-200",
+    "GET /auswertung?jahr=2024&kst=KST-200",
+    "GET /kostenstellen/KST-4711",
+    "PUT /kostenstellen/KST-4711",
+    "PUT /kostenstellen/KST-4711",
+    "GET /berichte?zeitraum=monat&user=u-100",
+    "GET /berichte?zeitraum=quartal&user=u-100"
+  ]
+}
