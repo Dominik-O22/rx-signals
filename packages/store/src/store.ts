@@ -1,9 +1,19 @@
-import { asyncScheduler, BehaviorSubject, merge, NEVER, type Observable, of } from 'rxjs';
+import {
+  asyncScheduler,
+  BehaviorSubject,
+  config,
+  EMPTY,
+  merge,
+  NEVER,
+  type Observable,
+  of,
+} from 'rxjs';
 import {
   delay,
   distinctUntilChanged,
   filter,
   map,
+  mergeMap,
   share,
   switchMap,
   take,
@@ -236,18 +246,7 @@ export class Store {
     identifier: ID,
     initialValueOrValueGetter: ToBehaviorIdValueType<ID> | (() => ToBehaviorIdValueType<ID>),
   ): void {
-    this.assertSourceExists(identifier, identifier);
-    this.getBehaviorControlledSubject(identifier).addSource(
-      new SourceObservable<ToBehaviorIdValueType<ID>>(
-        identifier,
-        NEVER,
-        false,
-        initialValueOrValueGetter,
-      ),
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.behaviors.push(identifier);
-    }
+    this.addBehavior(identifier, NEVER, false, initialValueOrValueGetter);
   }
 
   /**
@@ -269,7 +268,22 @@ export class Store {
   ): void {
     const sourceObservable = this.getEventStream(eventIdentifier).pipe(
       withLatestFrom(this.getBehavior(stateIdentifier)),
-      map(([event, state]) => reducer(state, event)),
+      mergeMap(([event, state]) => {
+        try {
+          return of(reducer(state, event));
+        } catch (error) {
+          // Erroring the source would complete the behavior and lose the state for good.
+          // Keep the previous state and report the error the way rxjs reports unhandled errors.
+          if (config.onUnhandledError) {
+            config.onUnhandledError(error);
+          } else {
+            setTimeout(() => {
+              throw error;
+            });
+          }
+          return EMPTY;
+        }
+      }),
     );
     this.getBehaviorControlledSubject(stateIdentifier).addSource(
       new SourceObservable<ToBehaviorIdValueType<SID>>(eventIdentifier, sourceObservable, false),
@@ -436,7 +450,6 @@ export class Store {
         );
         resetHandles.forEach(handle => handle?.removeSources());
         resetHandles.forEach(handle => handle?.readdSources());
-        behaviors = [];
       },
       end: () => {
         behaviors.forEach(key => {
@@ -474,15 +487,17 @@ export class Store {
   getBehavior<T>(identifier: BehaviorId<T>): Observable<T> {
     if (this.parentStore) {
       const parent: Store = this.parentStore;
-      return this.behaviorsSubject
-        .asObservable()
-        .pipe(
-          switchMap(s =>
-            (s.get(identifier)?.getNumberOfSources() ?? 0) > 0
-              ? this.getBehaviorControlledSubject(identifier).getObservable()
-              : parent.getBehavior(identifier),
-          ),
-        );
+      return this.behaviorsSubject.pipe(
+        map(behaviors => (behaviors.get(identifier)?.getNumberOfSources() ?? 0) > 0),
+        // Only switch when the owner changes; re-subscribing on every unrelated
+        // behavior change would replay the current value as a duplicate.
+        distinctUntilChanged(),
+        switchMap(hasOwnSource =>
+          hasOwnSource
+            ? this.getBehaviorControlledSubject(identifier).getObservable()
+            : parent.getBehavior(identifier),
+        ),
+      );
     }
     return this.getBehaviorControlledSubject(identifier).getObservable();
   }

@@ -1,5 +1,19 @@
-import { combineLatest, of, throwError } from 'rxjs';
-import { catchError, debounceTime, filter, map, switchMap, take } from 'rxjs/operators';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  defaultIfEmpty,
+  distinctUntilChanged,
+  EMPTY,
+  map,
+  merge,
+  NEVER,
+  of,
+  switchMap,
+  take,
+  throwError,
+  withLatestFrom,
+} from 'rxjs';
 import { type Signals, SignalsFactory } from './signals-factory';
 import { type Effect, type Store } from './store';
 import {
@@ -204,149 +218,126 @@ const getEffectBuilder: EffectSignalsBuild = <IT, RT>(
 
   const effectInputEquals = config.effectInputEquals ?? ((a, b) => a === b);
 
+  // A run is one effect execution: an input under an invalidation token.
+  // Invalidating replaces the token, so an equal input becomes a new run.
+  type Run = { input: IT; token: object | null };
+  const isSameRun = (a: Run | null, b: Run | null): boolean =>
+    a === b ||
+    (a !== null && b !== null && a.token === b.token && effectInputEquals(a.input, b.input));
+
+  // The last finished run and its result (result is undefined after an error or an empty effect).
+  type ResultState = { run: Run | null; result?: RT };
+
   const inIds = getInputSignalIds<IT>(config.nameExtension);
   const outIds = getOutputSignalIds<IT, RT>(config.nameExtension);
   const setup = (store: Store) => {
-    const invalidateTokenBehavior = getStateId<object | null>();
-    store.addState(invalidateTokenBehavior, null);
-    store.addReducer(invalidateTokenBehavior, inIds.invalidate, () => ({}));
+    const tokenId = getStateId<object | null>();
+    store.addState(tokenId, null);
+    store.addReducer(tokenId, inIds.invalidate, () => ({}));
 
     const internalInput = config.eagerInputSubscription === true ? getStateId<IT>() : inIds.input;
     if (internalInput !== inIds.input) {
       store.connect(inIds.input, internalInput);
     }
+    const input$ = store.getBehavior(internalInput);
+    const token$ = store.getBehavior(tokenId);
 
-    const resultEvent = getEventId<{
-      result?: RT;
-      resultInput: IT;
-      resultToken: object | null;
-    }>();
-    const resultBehavior = getDerivedId<{
-      result?: RT;
-      resultInput?: IT;
-      resultToken: object | null;
-    }>();
-    const initialResult = config.initialResultGetter ? config.initialResultGetter() : undefined;
-    store.addDerivedState(resultBehavior, store.getEventStream(resultEvent), {
-      result: initialResult,
-      resultToken: null,
+    const resultStateEvent = getEventId<ResultState>();
+    const resultStateId = getDerivedId<ResultState>();
+    store.addDerivedState(resultStateId, store.getEventStream(resultStateEvent), {
+      run: null,
+      result: config.initialResultGetter?.(),
     });
 
-    const triggeredInputEvent = getEventId<IT>();
-    const triggeredInputBehavior = getDerivedId<IT | null>();
-    store.addDerivedState(triggeredInputBehavior, store.getEventStream(triggeredInputEvent), null);
-
-    // It is important to setup the combined observable as behavior,
-    // because a simple shareReplay (even with refCount) would create a memory leak!!!
-    const combinedId = getDerivedId<
-      [
-        IT,
-        {
-          result?: RT;
-          resultInput?: IT;
-          resultToken: object | null;
-        },
-        object | null,
-        IT | null,
-      ]
-    >();
+    // In trigger mode: the input the last trigger was dispatched for (boxed, so a null input
+    // differs from no trigger). An input change withdraws it, an invalidation does not, so
+    // invalidating re-runs a triggered input right away.
+    const triggeredId = getDerivedId<{ input: IT } | null>();
     store.addDerivedState(
-      combinedId,
-      combineLatest([
-        store.getBehavior(internalInput),
-        store.getBehavior(resultBehavior),
-        store.getBehavior(invalidateTokenBehavior),
-        store.getBehavior(triggeredInputBehavior),
-      ]),
+      triggeredId,
+      config.withTrigger
+        ? merge(
+            store.getEventStream(inIds.trigger).pipe(
+              withLatestFrom(input$),
+              map(([, input]) => ({ input })),
+            ),
+            input$.pipe(
+              distinctUntilChanged(effectInputEquals),
+              map(() => null),
+            ),
+          )
+        : NEVER,
+      null,
     );
-    const combined = store.getBehavior(combinedId);
+    const triggered$ = store.getBehavior(triggeredId);
 
-    const eventSourceInput =
+    // The run wanted for an input: always without trigger mode, else only if it was triggered.
+    const wantedRun = (input: IT, token: object | null, triggered: { input: IT } | null) =>
+      !config.withTrigger || (triggered !== null && effectInputEquals(triggered.input, input))
+        ? { input, token }
+        : null;
+
+    // The run the effect should currently perform, or null if none.
+    // Debouncing applies to the input only, so a trigger during the debounce window is kept.
+    const effectInput$ =
       config.effectDebounceTime === undefined || config.effectDebounceTime < 1
-        ? combined
-        : combined.pipe(debounceTime(config.effectDebounceTime));
+        ? input$
+        : input$.pipe(debounceTime(config.effectDebounceTime));
+    const wantedRun$ = combineLatest([effectInput$, token$, triggered$]).pipe(
+      map(([input, token, triggered]) => wantedRun(input, token, triggered)),
+      distinctUntilChanged(isSameRun),
+    );
 
-    store.add4TypedEventSource(
-      resultEvent,
-      triggeredInputEvent,
+    const isPending = (run: Run | null, resultState: ResultState): boolean =>
+      run !== null && !isSameRun(run, resultState.run);
+
+    store.add3TypedEventSource(
+      resultStateEvent,
       outIds.errors,
       outIds.successes,
-      eventSourceInput.pipe(
-        filter(
-          ([input, resultState, token]) =>
-            token !== resultState.resultToken ||
-            resultState.resultInput === undefined ||
-            !effectInputEquals(input, resultState.resultInput),
-        ),
-        switchMap(([input, resultState, token, triggeredInput]) =>
-          config.withTrigger && input !== triggeredInput
-            ? store.getEventStream(inIds.trigger).pipe(
-                map(() => ({
-                  type: triggeredInputEvent,
-                  event: input,
-                })),
-              )
-            : internalResultEffect(input, store, resultState.resultInput, resultState.result).pipe(
-                switchMap(result =>
-                  of(
-                    {
-                      type: resultEvent,
-                      event: {
-                        result,
-                        resultInput: input,
-                        resultToken: token,
-                      },
-                    },
-                    {
-                      type: outIds.successes,
-                      event: {
-                        result,
-                        resultInput: input,
-                        previousInput: resultState.resultInput,
-                        previousResult: resultState.result,
-                      },
-                    },
-                  ),
-                ),
-                catchError(error =>
-                  of(
-                    {
-                      type: outIds.errors,
-                      event: {
-                        error,
-                        errorInput: input,
-                      },
-                    },
-                    {
-                      type: resultEvent,
-                      event: {
-                        resultInput: input,
-                        resultToken: token,
-                      },
-                    },
-                  ),
-                ),
+      wantedRun$.pipe(
+        withLatestFrom(store.getBehavior(resultStateId)),
+        switchMap(([run, previous]) => {
+          if (run === null || !isPending(run, previous)) {
+            return EMPTY;
+          }
+          return internalResultEffect(run.input, store, previous.run?.input, previous.result).pipe(
+            switchMap(result =>
+              of(
+                { type: resultStateEvent, event: { run, result } },
+                {
+                  type: outIds.successes,
+                  event: {
+                    result,
+                    resultInput: run.input,
+                    previousInput: previous.run?.input,
+                    previousResult: previous.result,
+                  },
+                },
               ),
-        ),
+            ),
+            // An effect that completes without a result still finishes the run.
+            defaultIfEmpty({ type: resultStateEvent, event: { run } }),
+            catchError(error =>
+              of(
+                { type: outIds.errors, event: { error, errorInput: run.input } },
+                { type: resultStateEvent, event: { run } },
+              ),
+            ),
+          );
+        }),
       ),
-      resultEvent,
+      resultStateEvent,
     );
 
     store.addDerivedState(
       outIds.combined,
-      combined.pipe(
-        map(([input, resultState, token, triggeredInput]) => ({
+      combineLatest([input$, token$, triggered$, store.getBehavior(resultStateId)]).pipe(
+        map(([input, token, triggered, resultState]) => ({
           currentInput: input,
           result: resultState.result,
-          resultInput: resultState.resultInput,
-          resultPending: config.withTrigger
-            ? input === triggeredInput &&
-              (token !== resultState.resultToken ||
-                resultState.resultInput === undefined ||
-                !effectInputEquals(input, resultState.resultInput))
-            : token !== resultState.resultToken ||
-              resultState.resultInput === undefined ||
-              !effectInputEquals(input, resultState.resultInput),
+          resultInput: resultState.run?.input,
+          resultPending: isPending(wantedRun(input, token, triggered), resultState),
         })),
       ),
       config.initialResultGetter

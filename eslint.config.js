@@ -14,6 +14,9 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/consistent-type-exports': 'error',
+      // Interfaces lack implicit index signatures, so --fix turning aliases into
+      // interfaces breaks assignability to Record-like constraints.
+      '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
     },
   },
   { files: ['**/*.js'], extends: [tseslint.configs.disableTypeChecked] },

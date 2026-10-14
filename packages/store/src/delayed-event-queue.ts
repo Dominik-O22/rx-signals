@@ -26,8 +26,13 @@ export class DelayedEventQueue {
       const queueLength = this.queueArray.length;
 
       for (let i = 0; i < queueLength; ++i) {
-        this.queueArray[0].next();
+        // Each subject is a one-shot signal. Completing it ends the inner
+        // subscription in getQueueDelayedObservable; without that, every
+        // event stays subscribed for the lifetime of the store.
+        const subject = this.queueArray[0];
+        subject.next();
         this.queueArray.shift();
+        subject.complete();
       }
       if (this.queueArray.length > 0) {
         this.signalNext();
