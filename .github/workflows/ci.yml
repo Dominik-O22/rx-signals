@@ -28,7 +28,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @rx-signals-next/store typecheck:matrix
-      - run: node --test codemod/test/
+      - run: node --test "codemod/test/*.test.mjs"
 
   fixture:
     # The codemod must migrate the rc23 Angular fixture app to the packages from this commit,
