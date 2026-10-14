@@ -1,1 +1,4 @@
-*.md
+dist
+coverage
+pnpm-lock.yaml
+CHANGELOG.md

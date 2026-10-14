@@ -2,9 +2,9 @@
 
 This introduction aims at a common understanding for the need of state- and effects-management, immutable architectures, as well as reactive programming and why all of these things are strongly tied together.
 
-* _State Management_ is used to make dependencies explicit and isolate them from code observing the state (immutably).
-* _Effects Management_ is used to make side-effects explicit and isolate them.
-* _Reactive Programming_ is used to propagate changes to the state, make them explicit and abstract away time-dependencies. Both, _State Management_ and _Effects Management_ are a natural consequence of reactive and immutable architectures.
+- _State Management_ is used to make dependencies explicit and isolate them from code observing the state (immutably).
+- _Effects Management_ is used to make side-effects explicit and isolate them.
+- _Reactive Programming_ is used to propagate changes to the state, make them explicit and abstract away time-dependencies. Both, _State Management_ and _Effects Management_ are a natural consequence of reactive and immutable architectures.
 
 While _rx-signals_ can be used in other contexts, it's main purpose is to implement architectures using the _**M**odel-**V**iew-**U**pdate_ pattern (MVU).
 
@@ -88,18 +88,20 @@ Strictly speaking, constants are of course no state, but in the context of _rx-s
 
 So the **Root State** corresponds to the **Model** in MVU.
 This means, in MVU, all logic for **Derived State** must be part of the _View_ function.
-_Redux_ and _NgRx_, use so-called _Selectors_ for **Derived State**, however the _View_ function is composed of more than just these _Selectors_. 
+_Redux_ and _NgRx_, use so-called _Selectors_ for **Derived State**, however the _View_ function is composed of more than just these _Selectors_.
 E.g. in _React + Redux_, a _render_ function with _useSelector_ hook would be a _View_ function.
 A common mistake of MVU-beginners is to model **Derived State** as part of the **Root State**, an issue that will be part of the next sub-sections topics.
 
 The following sub-sections will cover:
-* The problem of invalid state (and why we need to model dependencies in our state explicitly and declaratively)
-* Why we need global state management
+
+- The problem of invalid state (and why we need to model dependencies in our state explicitly and declaratively)
+- Why we need global state management
 
 ### The problem of invalid state
 
 To illustrate the challenge of valid state modelling, we can use simple local state examples (and then transfer our learnings to global state later).
 In the following example, we are just using an (admittedly useless) class as example component:
+
 ```typescript
 class Example {
   a: number;
@@ -113,6 +115,7 @@ class Example {
   }
 }
 ```
+
 If the three fields were readonly, this would be fine, but as it is, `a` and `b` can change and thus, there is no guarantee that `a_plus_b` is always what it's name says.
 We could instead call it `readonly a_plus_b_at_construction_time`, but what if we really want it to always be `a` plus `b`?
 The given example has no mechanism to make sure of this, so it's very easy to end up with an invalid state.
@@ -120,6 +123,7 @@ You could say the implementation is lying when calling it `a_plus_b`.
 
 The underlying problem is that we defined the dependencies of `a_plus_b` only implicitly (implied by name, saying '_Hey co-developer, please keep in mind `a_plus_b` should be the sum, whenever you update `a` or `b`_'), rather than doing it explicitly.
 Here is _Variant 1_ to do it explicitly (spoiler: it's a very bad):
+
 ```typescript
 // Variant 1
 class Example {
@@ -131,13 +135,19 @@ class Example {
     this._a = v;
     this._a_plus_b = this._a + this._b;
   }
-  get a() { return this._a; }
+  get a() {
+    return this._a;
+  }
   set b(v: number) {
     this._b = v;
     this._a_plus_b = this._a + this._b;
   }
-  get b() { return this._b; }
-  get a_plus_b() { return this._a_plus_b }
+  get b() {
+    return this._b;
+  }
+  get a_plus_b() {
+    return this._a_plus_b;
+  }
 
   constructor(a: number, b: number) {
     this.a = a;
@@ -145,6 +155,7 @@ class Example {
   }
 }
 ```
+
 Ok, we've chosen an imperative way to model the dependency by always assigning the right value in setters.
 Thereby, we made sure to account for all changes in `_a` and `_b` coming from outside the class.
 But other developers might still add methods to our class where they modify `_a` or `_b` directly without thinking about updating `_a_plus_b`.
@@ -152,12 +163,15 @@ So we could still end up with an **invalid state**, hence we **failed** in makin
 
 The mistake is that we modelled `_a_plus_b` as **Root State**, while it clearly should be **Derived State**.
 Of course, in this trivial case, no developer would ever come to the idea to implement the horrible mess we saw in _Variant 1_, but instead one would model the dependent value as transient property like in _Variant 2_:
+
 ```typescript
 // Variant 2
 class Example {
   a: number;
   b: number;
-  get a_plus_b() { return this.a + this.b }
+  get a_plus_b() {
+    return this.a + this.b;
+  }
 
   constructor(a: number, b: number) {
     this.a = a;
@@ -165,18 +179,21 @@ class Example {
   }
 }
 ```
+
 Now we modelled the dependency explicitly in a declarative way.
 It is no longer possible to end up with an invalid state (with respect to our rule that `a_plus_b` must always be the sum of `a` and `b`).
+
 > Modelling dependencies explicitly in a way that invalid state is impossible (that the dependencies cannot be broken) is only possible by doing it declaratively!
 
 Let's do a short comparison:
-_Variant 1_ | _Variant 2_
-------------|------------
-implicit dependency | explicit dependency
-invalid state must be covered by tests | invalid state impossible
-imperative | declarative
-eager | lazy
-low readability | high readability
+
+| _Variant 1_                            | _Variant 2_              |
+| -------------------------------------- | ------------------------ |
+| implicit dependency                    | explicit dependency      |
+| invalid state must be covered by tests | invalid state impossible |
+| imperative                             | declarative              |
+| eager                                  | lazy                     |
+| low readability                        | high readability         |
 
 Invalid state is a bad thing, because it is equivalent to a bug.
 It may not result in a bug in the current state of your application, but it lurks there and may surface in the future.
@@ -213,6 +230,7 @@ Even more important, if you violate it, you are making the life of your co-devel
 
 But the differentiation between **Root State** and **Derived State** and thus, the declarative modelling of dependencies is not always as trivial as in the previous example!
 Let's go back to a 'simple' 3-property example:
+
 ```typescript
 class Example {
   query: string;
@@ -233,12 +251,13 @@ So if you snapshot such valid state and then restart your application with that 
 
 But how can we define `loading` declaratively as **Derived State**?
 One way would be like this:
+
 ```typescript
 class Example {
   query: string;
-  result: { 
+  result: {
     usedQuery: string | null;
-    result: string[]; 
+    result: string[];
   };
   get loading() { return this.query !== this.result.usedQuery };
   ...
@@ -274,6 +293,7 @@ There's nothing wrong with cyclic dependencies between properties in general, as
 But if `G`, `L` and `I` would be managed by 3 different components, we would end up with those components being tightly coupled and our build system might even frown upon the cyclic dependency.
 
 So we have two opposing apsects:
+
 1. We want to have explicit dependencies in our state
 2. We want to have no dependencies between our components
 
@@ -282,9 +302,10 @@ An additional problem arises, if the lifecycle of a component does not match the
 **Global _State Management_ is a solution to these problems.**
 It separates the state (and it's inherent dependencies) from the components and their lifecycles.
 That gives you:
-* Decoupled components (and thus, better testability and maintainability)
-* State with dependencies that can be tested separately from the components using the state
-* State with a lifecycle that is decoupled from component lifecycles
+
+- Decoupled components (and thus, better testability and maintainability)
+- State with dependencies that can be tested separately from the components using the state
+- State with a lifecycle that is decoupled from component lifecycles
 
 Many people new to MVU have problems to decide which properties to put under global state management and which not.
 In reality, the decision is not that hard:
@@ -321,11 +342,14 @@ Up to this point, we discussed things concerning the question '_What is the valu
 Now we will address the question '_When does the value of property X change?_'.
 
 Coming back to the example with a local declarative dependency:
+
 ```typescript
 class Example {
   a: number;
   b: number;
-  get a_plus_b() { return this.a + this.b }
+  get a_plus_b() {
+    return this.a + this.b;
+  }
 
   constructor(a: number, b: number) {
     this.a = a;
@@ -333,6 +357,7 @@ class Example {
   }
 }
 ```
+
 We solved the problem '_What is `a_plus_b`_'.
 Properties that depend on `a_plus_b` may be declared similarly.
 All these declaration are lazy, hence they are evaluated at the point of time when they are accessed.
@@ -402,6 +427,7 @@ So next, I like to assert on why it is of utmost importance to have only managed
 
 In programming, side-effects (or more general, impure code) are the root of all evil.
 For a start, let's have a look at just some of the many advantages that pure functions (no side-effects and referential transparancy) have over impure functions:
+
 1. simple to reason about (for programmers **and** compilers)
 2. simple testing (no mockup-hell)
 3. simple composition (tackling complexity)
@@ -439,13 +465,13 @@ In the [**Using _rx-signals_**](https://github.com/gneu77/rx-signals/blob/master
 
 In the end the things discussed in the previous sections are all just different apspects of the same thing.
 
-* _Declarative_ implies _Immutability_ and vice versa
-* _Declarative_ implies _Explicit Dependencies_ and vice versa
-* Non-local _Dependencies_ imply _State Management_
-* _State Management_ and _Explicit Dependencies_ imply _Effects Management_
-* _Declarative_ and _Dependencies_ imply _Change Propagation_
-* _Change Propagation_ implies _Immutability_
-* etc.
+- _Declarative_ implies _Immutability_ and vice versa
+- _Declarative_ implies _Explicit Dependencies_ and vice versa
+- Non-local _Dependencies_ imply _State Management_
+- _State Management_ and _Explicit Dependencies_ imply _Effects Management_
+- _Declarative_ and _Dependencies_ imply _Change Propagation_
+- _Change Propagation_ implies _Immutability_
+- etc.
 
 => _Reactive Programming_ (done right) implies all of it
 

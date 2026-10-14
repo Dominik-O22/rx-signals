@@ -1,0 +1,54 @@
+{
+  "name": "@rx-signals-next/store",
+  "version": "4.0.0-dev.0",
+  "description": "Reactive state- and effects-management with behaviors and event streams",
+  "author": "Gerd Neudert",
+  "contributors": [
+    "Dominik Opwis"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dominik-O22/rx-signals.git",
+    "directory": "packages/store"
+  },
+  "keywords": [
+    "rxjs",
+    "reactive programming",
+    "behaviors",
+    "events",
+    "signals",
+    "streams",
+    "store",
+    "effects management",
+    "state management",
+    "dependency injection",
+    "typescript"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "^0.18.5"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  }
+}
