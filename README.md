@@ -17,7 +17,7 @@ Read [codemod/MIGRATION.md](codemod/MIGRATION.md). The script rewrites the code 
 ```sh
 pnpm install
 pnpm build && pnpm test && pnpm lint && pnpm typecheck
-node --test codemod/test/
+node --test "codemod/test/*.test.mjs"
 node scripts/fixture-gate.mjs --migrate   # needs Chrome or Chromium
 ```
 
