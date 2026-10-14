@@ -18,7 +18,7 @@ There are three kinds.
 | --------------------------- | ----------------------------------------------- | ----------------------------------------------- |
 | `C1` to `C9`, `C?`          | A compile error. `--check` writes these.        | `--check` removes it once the error is fixed.   |
 | `R1` to `R11`               | A site the script could not rewrite.            | Delete the line after you fix the code.         |
-| `verify B1` to `verify B13` | It compiles, but behaves differently than rc23. | Delete the line after you checked the behavior. |
+| `verify B1` to `verify B16` | It compiles, but behaves differently than rc23. | Delete the line after you checked the behavior. |
 
 To find them, use your IDE's TODO list (WebStorm: View, Tool Windows, TODO. VS Code: search for `TODO(rx-signals-v4)`), or run:
 
@@ -396,6 +396,10 @@ These compile and run, but behave differently. Most are rc23 bug fixes. The scri
 - **B11 Id names.** Names set with `setIdName` are gone. `id.name` contains the name given to `get*Id('name')`. Check log output or tests that compared names.
 - **B12 No subscription leak per event.** rc23 kept about 1.9 KB per dispatched event for every direct `getEventStream` subscriber. v4 does not.
 - **B13 Child state overrides parent state.** A child store's `addState` for an id that the parent also has now takes over for the child's subscribers.
+
+- **B14 Model output is derived state.** `getModelSignalsFactory` exposes `output.model` as a `DerivedId`. In rc23 it was a state id typed as `BehaviorId`. Code that only reads it does not change.
+- **B15 Behaviors resolve their cell on subscribe.** An observable from `getBehavior` or `getEventStream` looks up its signal when it is subscribed. After `completeBehavior` or `completeAllSignals`, subscribing an observable you kept from before reads the new state, not a completed one.
+- **B16 Id names in messages.** Error messages and `id.name` show `D_1` or the name you passed, not `Symbol(D_1)`. Check tests that compare error messages.
 
 ## What the fixture app needed
 

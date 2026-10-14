@@ -4,7 +4,6 @@ import {
   type EnvironmentProviders,
   ErrorHandler,
   type Provider,
-  provideExperimentalZonelessChangeDetection,
 } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { getDerivedId, getEventId, getStateId, Store } from '@rx-signals-next/store';
@@ -23,9 +22,7 @@ const setupCounter: StoreSetup = store => {
 };
 
 const configure = (...providers: (Provider | EnvironmentProviders)[]) =>
-  TestBed.configureTestingModule({
-    providers: [provideExperimentalZonelessChangeDetection(), ...providers],
-  });
+  TestBed.configureTestingModule({ providers });
 
 /** A lazy route or module: an environment injector below the root one. */
 const childInjector = (...providers: (Provider | EnvironmentProviders)[]) =>
