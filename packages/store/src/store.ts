@@ -237,18 +237,7 @@ export class Store {
     identifier: ID,
     initialValueOrValueGetter: ToBehaviorIdValueType<ID> | (() => ToBehaviorIdValueType<ID>),
   ): void {
-    this.assertSourceExists(identifier, identifier);
-    this.getBehaviorControlledSubject(identifier).addSource(
-      new SourceObservable<ToBehaviorIdValueType<ID>>(
-        identifier,
-        NEVER,
-        false,
-        initialValueOrValueGetter,
-      ),
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.behaviors.push(identifier);
-    }
+    this.addBehavior(identifier, NEVER, false, initialValueOrValueGetter);
   }
 
   /**
@@ -448,7 +437,6 @@ export class Store {
         );
         resetHandles.forEach(handle => handle?.removeSources());
         resetHandles.forEach(handle => handle?.readdSources());
-        behaviors = [];
       },
       end: () => {
         behaviors.forEach(key => {
@@ -486,15 +474,17 @@ export class Store {
   getBehavior<T>(identifier: BehaviorId<T>): Observable<T> {
     if (this.parentStore) {
       const parent: Store = this.parentStore;
-      return this.behaviorsSubject
-        .asObservable()
-        .pipe(
-          switchMap(s =>
-            (s.get(identifier)?.getNumberOfSources() ?? 0) > 0
-              ? this.getBehaviorControlledSubject(identifier).getObservable()
-              : parent.getBehavior(identifier),
-          ),
-        );
+      return this.behaviorsSubject.pipe(
+        map(behaviors => (behaviors.get(identifier)?.getNumberOfSources() ?? 0) > 0),
+        // Only switch when the owner changes; re-subscribing on every unrelated
+        // behavior change would replay the current value as a duplicate.
+        distinctUntilChanged(),
+        switchMap(hasOwnSource =>
+          hasOwnSource
+            ? this.getBehaviorControlledSubject(identifier).getObservable()
+            : parent.getBehavior(identifier),
+        ),
+      );
     }
     return this.getBehaviorControlledSubject(identifier).getObservable();
   }
