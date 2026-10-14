@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { map, withLatestFrom } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { Store, getDerivedId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
+import { isSubscribed } from '../src/testing';
 describe('Cyclic dependencies all lazy', () => {
   const cyclicBehavior = getDerivedId<number>();
   const derivedBehavior = getDerivedId<number>();
@@ -31,35 +31,35 @@ describe('Cyclic dependencies all lazy', () => {
   });
 
   it('should have correct initial value', async () => {
-    expect(store.isSubscribed(cyclicBehavior)).toBe(false);
-    expect(store.isSubscribed(derivedBehavior)).toBe(false);
-    expect(store.isSubscribed(inputEvent)).toBe(false);
+    expect(isSubscribed(store, cyclicBehavior)).toBe(false);
+    expect(isSubscribed(store, derivedBehavior)).toBe(false);
+    expect(isSubscribed(store, inputEvent)).toBe(false);
 
     await expectSequence(store.getBehavior(derivedBehavior), [10]);
 
-    expect(store.isSubscribed(cyclicBehavior)).toBe(false);
-    expect(store.isSubscribed(derivedBehavior)).toBe(false);
-    expect(store.isSubscribed(inputEvent)).toBe(false);
+    expect(isSubscribed(store, cyclicBehavior)).toBe(false);
+    expect(isSubscribed(store, derivedBehavior)).toBe(false);
+    expect(isSubscribed(store, inputEvent)).toBe(false);
   });
 
   it('should get correct value on first dispatch', async () => {
-    expect(store.isSubscribed(cyclicBehavior)).toBe(false);
-    expect(store.isSubscribed(derivedBehavior)).toBe(false);
-    expect(store.isSubscribed(inputEvent)).toBe(false);
+    expect(isSubscribed(store, cyclicBehavior)).toBe(false);
+    expect(isSubscribed(store, derivedBehavior)).toBe(false);
+    expect(isSubscribed(store, inputEvent)).toBe(false);
 
     const sequence = expectSequence(store.getBehavior(derivedBehavior), [10, 1000]);
 
-    expect(store.isSubscribed(cyclicBehavior)).toBe(true);
-    expect(store.isSubscribed(derivedBehavior)).toBe(true);
-    expect(store.isSubscribed(inputEvent)).toBe(true);
+    expect(isSubscribed(store, cyclicBehavior)).toBe(true);
+    expect(isSubscribed(store, derivedBehavior)).toBe(true);
+    expect(isSubscribed(store, inputEvent)).toBe(true);
 
     store.dispatch(inputEvent, 1);
 
     await sequence;
 
-    expect(store.isSubscribed(cyclicBehavior)).toBe(false);
-    expect(store.isSubscribed(derivedBehavior)).toBe(false);
-    expect(store.isSubscribed(inputEvent)).toBe(false);
+    expect(isSubscribed(store, cyclicBehavior)).toBe(false);
+    expect(isSubscribed(store, derivedBehavior)).toBe(false);
+    expect(isSubscribed(store, inputEvent)).toBe(false);
   });
 
   it('should not change, if second event sent while unsubscribed', async () => {

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type Observable } from 'rxjs';
 import { map, withLatestFrom } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { Store, getDerivedId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
+import { isSubscribed } from '../src/testing';
 
 describe('shared behavior state', () => {
   let store: Store;
@@ -53,7 +53,7 @@ describe('shared behavior state', () => {
     await sequence;
     await sequence2;
     expect(calculationCalled).toBe(3);
-    expect(store.isSubscribed(id)).toBe(false);
+    expect(isSubscribed(store, id)).toBe(false);
     const sequence3 = expectSequence(observable, [8, 16]);
     store.dispatch(calculateEvent);
     await sequence3;

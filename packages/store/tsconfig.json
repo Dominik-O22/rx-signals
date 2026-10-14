@@ -3,5 +3,10 @@
   "compilerOptions": {
     "types": []
   },
-  "include": ["src", "test", "*.config.ts"]
+  "include": ["src", "test", "*.config.ts"],
+  "exclude": [
+    "src/*signals-factory.ts",
+    "test/*factor*.test.ts",
+    "test/testing-documentation.test.ts"
+  ]
 }

@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { map } from 'rxjs';
-import { Store } from '../src/store';
-import { getStateId } from '../src/store-utils';
+import { Store, getStateId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
-import { getEventId } from './../src/store-utils';
+import { getNumberOfBehaviorSources, isSubscribed } from '../src/testing';
 
 describe('Lifecycle basics', () => {
   const numberBehavior = getStateId<number>();
@@ -63,19 +62,19 @@ describe('Lifecycle basics', () => {
 
     const sequence1 = expectSequence(store.getBehavior(numberBehavior), [0, 1, 2]);
     const sequence2 = expectSequence(store.getBehavior(numberBehavior), [0, 1]);
-    expect(store.isSubscribed(numberBehavior)).toBe(true);
-    expect(store.isSubscribed(numberBehavior2)).toBe(true);
+    expect(isSubscribed(store, numberBehavior)).toBe(true);
+    expect(isSubscribed(store, numberBehavior2)).toBe(true);
     await store.dispatch(triggerEvent, undefined);
-    expect(store.isSubscribed(numberBehavior)).toBe(true);
-    expect(store.isSubscribed(numberBehavior2)).toBe(true);
+    expect(isSubscribed(store, numberBehavior)).toBe(true);
+    expect(isSubscribed(store, numberBehavior2)).toBe(true);
 
-    expect(store.getNumberOfBehaviorSources(numberBehavior)).toBe(2);
-    expect(store.getNumberOfBehaviorSources(numberBehavior2)).toBe(2);
+    expect(getNumberOfBehaviorSources(store, numberBehavior)).toBe(2);
+    expect(getNumberOfBehaviorSources(store, numberBehavior2)).toBe(2);
     handle.end();
-    expect(store.isSubscribed(numberBehavior)).toBe(true);
-    expect(store.isSubscribed(numberBehavior2)).toBe(false);
-    expect(store.getNumberOfBehaviorSources(numberBehavior)).toBe(2);
-    expect(store.getNumberOfBehaviorSources(numberBehavior2)).toBe(0);
+    expect(isSubscribed(store, numberBehavior)).toBe(true);
+    expect(isSubscribed(store, numberBehavior2)).toBe(false);
+    expect(getNumberOfBehaviorSources(store, numberBehavior)).toBe(2);
+    expect(getNumberOfBehaviorSources(store, numberBehavior2)).toBe(0);
     store.dispatch(triggerEvent, undefined);
     await sequence1;
     await sequence2;

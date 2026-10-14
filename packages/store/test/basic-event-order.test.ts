@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { of } from 'rxjs';
 import { filter, map, mapTo, switchMap, take, tap } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getEventId, getStateId } from '../src/store-utils';
+import { Store, getEventId, getStateId } from '../src';
 import { expectSequence } from './test-utils';
 
 describe('Event order', () => {

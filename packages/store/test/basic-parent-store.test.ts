@@ -1,7 +1,6 @@
 import { beforeEach, describe, it } from 'vitest';
 import { of } from 'rxjs';
-import { Store } from '../src/store';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { Store, getDerivedId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
 
 describe('Parent store', () => {

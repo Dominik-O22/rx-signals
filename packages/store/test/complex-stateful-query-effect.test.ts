@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { combineLatest, of } from 'rxjs';
 import { filter, map, switchMap } from 'rxjs/operators';
-import { getDerivedId, getEventId, getStateId } from '../src/store-utils';
+import { getDerivedId, getEventId, getStateId, Store } from '../src';
 import { awaitStringifyEqualState, expectSequence } from './test-utils';
-import { Store } from './../src/store';
+import { isSubscribed } from '../src/testing';
 describe('Stateful query pattern', () => {
   type QueryType = {
     firstName: string | null;
@@ -63,8 +63,8 @@ describe('Stateful query pattern', () => {
   });
 
   it('should automatically subscribe query and result', async () => {
-    expect(store.isSubscribed(resultBehavior)).toBe(false);
-    expect(store.isSubscribed(queryBehavior)).toBe(true);
+    expect(isSubscribed(store, resultBehavior)).toBe(false);
+    expect(isSubscribed(store, queryBehavior)).toBe(true);
   });
 
   it('should trigger the effect without subscription from outside', async () => {
