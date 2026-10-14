@@ -1,9 +1,8 @@
 import { beforeEach, describe, it } from 'vitest';
 import { of } from 'rxjs';
 import { filter, switchMap } from 'rxjs/operators';
-import { Store } from '../src/store';
+import { Store, getEventId, getStateId } from '../src';
 import { expectSequence } from './test-utils';
-import { getEventId, getStateId } from './../src/store-utils';
 
 describe('Effect loops', () => {
   const counterState = getStateId<number>();

@@ -1,11 +1,11 @@
 import { beforeEach, describe, it } from 'vitest';
-import { Store } from '../src/store';
-import { expectSequence } from './test-utils';
 import {
+  Store,
   getModelSignalsFactory,
   type ModelInputSignals,
   type ModelOutputSignals,
-} from './../src/model-signals-factory';
+} from '../src';
+import { expectSequence } from './test-utils';
 
 describe('ModelSignalsFactory', () => {
   type ModelType = {
@@ -47,7 +47,7 @@ describe('ModelSignalsFactory', () => {
       defaultModel,
       newModel,
     ]);
-    store.dispatch(inputSignals.setModel, newModel);
+    void store.dispatch(inputSignals.setModel, newModel);
     await sequence;
   });
 
@@ -59,7 +59,7 @@ describe('ModelSignalsFactory', () => {
         b: 42,
       },
     ]);
-    store.dispatch(inputSignals.updateModel, { b: 42 });
+    void store.dispatch(inputSignals.updateModel, { b: 42 });
     await sequence;
   });
 
@@ -73,8 +73,8 @@ describe('ModelSignalsFactory', () => {
       newModel,
       defaultModel,
     ]);
-    store.dispatch(inputSignals.setModel, newModel);
-    store.dispatch(inputSignals.resetModel);
+    void store.dispatch(inputSignals.setModel, newModel);
+    void store.dispatch(inputSignals.resetModel);
     await sequence;
   });
 });

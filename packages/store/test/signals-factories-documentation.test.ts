@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { combineLatest, merge, of } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { type Effect, Store } from '../src/store';
-import { expectSequence } from './test-utils';
-import { getEffectSignalsFactory } from './../src/effect-signals-factory';
-import { type Signals, SignalsFactory } from './../src/signals-factory';
 import {
+  type Effect,
+  Store,
+  getEffectSignalsFactory,
+  type Signals,
+  SignalsFactory,
   type BehaviorId,
   type DerivedId,
   type EventId,
   getDerivedId,
   getEventId,
   getStateId,
-} from './../src/store-utils';
+  type NoIds,
+} from '../src';
+import { expectSequence } from './test-utils';
 
 describe('signals factories documentation', () => {
   let store: Store;
@@ -59,7 +62,7 @@ describe('signals factories documentation', () => {
     const getSumSignalsBad: (
       inputA: BehaviorId<number>,
       inputB: BehaviorId<number>,
-    ) => Signals<{}, SumOutput> = (inputA, inputB) => {
+    ) => Signals<NoIds, SumOutput> = (inputA, inputB) => {
       const counterSum = getDerivedId<number>();
       return {
         input: {},
@@ -106,9 +109,9 @@ describe('signals factories documentation', () => {
       setup(store);
 
       const sequence = expectSequence(store.getBehavior(output.counter), [0, 1, 6, 4]);
-      store.dispatch(input.increaseBy, 1);
-      store.dispatch(input.increaseBy, 5);
-      store.dispatch(input.decreaseBy, 2);
+      void store.dispatch(input.increaseBy, 1);
+      void store.dispatch(input.increaseBy, 5);
+      void store.dispatch(input.decreaseBy, 2);
 
       await sequence;
     });
@@ -142,10 +145,10 @@ describe('signals factories documentation', () => {
       setup(store);
 
       const sequence = expectSequence(store.getBehavior(output.counterSum), [0, 1, 6, 8, 5]);
-      store.dispatch(input.inputA.increaseBy, 1);
-      store.dispatch(input.inputA.increaseBy, 5);
-      store.dispatch(input.inputB.increaseBy, 2);
-      store.dispatch(input.inputA.decreaseBy, 3);
+      void store.dispatch(input.inputA.increaseBy, 1);
+      void store.dispatch(input.inputA.increaseBy, 5);
+      void store.dispatch(input.inputB.increaseBy, 2);
+      void store.dispatch(input.inputA.decreaseBy, 3);
 
       await sequence;
     });
@@ -178,10 +181,10 @@ describe('signals factories documentation', () => {
       setup(store);
 
       const sequence = expectSequence(store.getBehavior(output.counterSum), [0, 1, 6, 8, 5]);
-      store.dispatch(input.inputA.increaseBy, 1);
-      store.dispatch(input.inputA.increaseBy, 5);
-      store.dispatch(input.inputB.increaseBy, 2);
-      store.dispatch(input.inputA.decreaseBy, 3);
+      void store.dispatch(input.inputA.increaseBy, 1);
+      void store.dispatch(input.inputA.increaseBy, 5);
+      void store.dispatch(input.inputB.increaseBy, 2);
+      void store.dispatch(input.inputA.decreaseBy, 3);
 
       await sequence;
     });
@@ -220,10 +223,10 @@ describe('signals factories documentation', () => {
       setup(store);
 
       const sequence = expectSequence(store.getBehavior(output.counterSum), [0, 1, 6, 8, 5]);
-      store.dispatch(input.inputA.increaseBy, 1);
-      store.dispatch(input.inputA.increaseBy, 5);
-      store.dispatch(input.inputB.increaseBy, 2);
-      store.dispatch(input.inputA.decreaseBy, 3);
+      void store.dispatch(input.inputA.increaseBy, 1);
+      void store.dispatch(input.inputA.increaseBy, 5);
+      void store.dispatch(input.inputB.increaseBy, 2);
+      void store.dispatch(input.inputA.decreaseBy, 3);
 
       await sequence;
     });
@@ -241,8 +244,8 @@ describe('signals factories documentation', () => {
           .connectObservable(
             (store, output) => store.getBehavior(output.conflicts2.counter),
             'inputB',
-            false,
           )
+          .removeInputId('inputB')
           .mapInput(ids => ({
             inputA: ids.conflicts1,
             inputB: ids.conflicts2,
@@ -255,10 +258,10 @@ describe('signals factories documentation', () => {
       setup(store);
 
       const sequence = expectSequence(store.getBehavior(output.counterSum), [0, 1, 6, 8, 5]);
-      store.dispatch(input.inputA.increaseBy, 1);
-      store.dispatch(input.inputA.increaseBy, 5);
-      store.dispatch(input.inputB.increaseBy, 2);
-      store.dispatch(input.inputA.decreaseBy, 3);
+      void store.dispatch(input.inputA.increaseBy, 1);
+      void store.dispatch(input.inputA.increaseBy, 5);
+      void store.dispatch(input.inputB.increaseBy, 2);
+      void store.dispatch(input.inputA.decreaseBy, 3);
 
       await sequence;
     });
@@ -414,8 +417,12 @@ describe('signals factories documentation', () => {
     };
     const getQueryWithResultFactory = <FilterType, ResultType>() =>
       getFilteredSortedPagedQuerySignalsFactory<FilterType>()
+        .nestConfig('c1')
         .compose(
-          getEffectSignalsFactory<[FilterType, SortParameter, PagingParameter], ResultType>(),
+          getEffectSignalsFactory<
+            [FilterType, SortParameter, PagingParameter],
+            ResultType
+          >().nestConfig('c2'),
         )
         .connectObservable(
           (store, output) =>
@@ -425,8 +432,8 @@ describe('signals factories documentation', () => {
               store.getBehavior(output.paging),
             ]),
           'input',
-          false,
         )
+        .removeInputId('input')
         .mapConfig((config: QueryWithResultConfig<FilterType>) => ({
           c1: {
             defaultModel: config.defaultFilter,
@@ -434,7 +441,7 @@ describe('signals factories documentation', () => {
           c2: {},
         }));
 
-    it('should create the factory', async () => {
+    it('should create the factory', () => {
       type MyFilter = { firstName: string; lastName: string };
       const effectMock: Effect<[MyFilter, SortParameter, PagingParameter], string[]> = input =>
         of([`${input[0].firstName} ${input[0].lastName}`]);
@@ -446,7 +453,7 @@ describe('signals factories documentation', () => {
       });
       store.addEffect(mySignals.effects.id, effectMock);
 
-      expect(mySignals.output.model.toString().startsWith('Symbol(S')).toBe(true);
+      expect(mySignals.output.model.kind).toBe('state');
     });
   });
 });

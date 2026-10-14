@@ -218,12 +218,11 @@ You can also add event sources that dispatch multiple _event-types_.
 E.g. a source that can dispatch 2 different _event-types_ with corresponding _event-values-types_ `A` and `B`:
 
 ```typescript
-store.add2TypedEventSource(
-  eventIdA: EventId<A>,
-  eventIdB: EventId<B>,
-  observable: Observable<TypedEvent<A> | TypedEvent<B>>,
-  subscribeObservableOnlyIfEventIsSubscribed?: null | EventId<any>
-)
+store.addTypedEventSource(
+  [eventIdA, eventIdB],
+  observable, // Observable<TypedEvent<A> | TypedEvent<B>>
+  { onlyWhileSubscribed: eventIdA }, // optional
+);
 ```
 
 As you can see, in this case, the source-observable must provide values of
@@ -237,8 +236,7 @@ type TypedEvent<T> = Readonly<{
 
 so that the store knows which _event-type_ to dispatch.
 
-You might wonder about this optional parameter with the horrible name `subscribeObservableOnlyIfEventIsSubscribed`. Well, I was just not able to come up with a better name.
-It is however one of the most powerful features of the store!
+The optional `onlyWhileSubscribed` is one of the most powerful features of the store.
 Think about the following scenario:
 
 - You have an effect that
@@ -247,18 +245,14 @@ Think about the following scenario:
 - You have a generic error-handler that subscribes to an _event-type_ `appError` over the whole lifetime of your application.
 
 ```typescript
-store.add2TypedEventSource(
-  myEffectSuccess,
-  appError,
+store.addTypedEventSource(
+  [myEffectSuccess, appError],
   of({ type: myEffectSuccess, event: mockResult }, { type: appError, event: mockError }),
-  myEffectSuccess, // subscribeObservableOnlyIfEventIsSubscribed
+  { onlyWhileSubscribed: myEffectSuccess },
 );
 ```
 
-Without the last parameter, the `store.getEventStream(appError)` that you have somewhere in your global error-handler would automatically subscribe your 2-typed-event-source. Thus, the requirement that the effect should only be executed, if `myEffectSuccess` is subscribed, would not be fulfilled.
-However, with the last parameter, we are telling the store to subscribe the source only if `myEffectSuccess` is subscribed.
-
-Analogously, there are also methods `add3TypedEventSource`, `add4TypedEventSource`, etc. (cause I was not yet able to implement this as a single method that is still 100% type-safe).
+Without the option, the `store.getEventStream(appError)` in your global error handler would subscribe the source, and the effect would run even though nobody listens to `myEffectSuccess`. With it, the store subscribes the source only while `myEffectSuccess` is subscribed.
 
 ### Behaviors <a name="behaviors"></a>
 
@@ -347,7 +341,7 @@ Adding a derived-state behavior source is done by:
 store.addDerivedState(
   identifier: DerivedId<T>,
   observable: Observable<T>,
-  initialValueOrValueGetter: T | (() => T) | symbol = NO_VALUE,
+  initialValueOrValueGetter?: T | (() => T),
 );
 ```
 

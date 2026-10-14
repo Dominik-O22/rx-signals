@@ -1,0 +1,26 @@
+diff --git a/src/app/features/auswertung/auswertung-signals.factory.ts b/src/app/features/auswertung/auswertung-signals.factory.ts
+index 3fb0afc..e744202 100644
+--- a/src/app/features/auswertung/auswertung-signals.factory.ts
++++ b/src/app/features/auswertung/auswertung-signals.factory.ts
+@@ -208,7 +208,7 @@ export const getAuswertungSignalsFactory = (): AuswertungSignalsFactory =>
+         store.getEventStream(output.errors).pipe(
+           map(({ error, errorInput }) => ({
+             kind: 'error' as const,
+-            text: `Auswertung ${filterLabel(errorInput)} fehlgeschlagen: ${String(error?.message ?? error)}`,
++            text: `Auswertung ${filterLabel(errorInput)} fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`,
+           })),
+         ),
+       );
+diff --git a/src/app/selftest/selftest.service.ts b/src/app/selftest/selftest.service.ts
+index 85c7405..4280903 100644
+--- a/src/app/selftest/selftest.service.ts
++++ b/src/app/selftest/selftest.service.ts
+@@ -240,7 +240,7 @@ export class SelftestService {
+       staleSummary,
+       afterError,
+       errors: errors.map(e => ({
+-        message: String(e.error?.message ?? e.error),
++        message: e.error instanceof Error ? e.error.message : String(e.error),
+         input: e.errorInput,
+       })),
+       kst200,

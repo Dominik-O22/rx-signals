@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { merge, type Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getEventId, getStateId } from '../src/store-utils';
+import { Store, getEventId, getStateId } from '../src';
 import { expectSequence } from './test-utils';
+import { isSubscribed } from '../src/testing';
 
 describe('completeAllSignals', () => {
   let store: Store;
@@ -15,6 +15,7 @@ describe('completeAllSignals', () => {
   };
 
   const id = getStateId<number>();
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- apps declare void events
   const calculateEvent = getEventId<void>();
 
   let observable: Observable<number>;
@@ -31,24 +32,24 @@ describe('completeAllSignals', () => {
 
   it('should not do anything after a call to completeAllSignals', async () => {
     const sequence = expectSequence(observable, [1, 2, 4, 8]);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence;
     await expectSequence(observable, [8]);
     expect(calculationCalled).toBe(3);
-    expect(store.isSubscribed(calculateEvent)).toBe(true);
+    expect(isSubscribed(store, calculateEvent)).toBe(true);
 
     store.completeAllSignals();
-    expect(store.isSubscribed(calculateEvent)).toBe(false);
+    expect(isSubscribed(store, calculateEvent)).toBe(false);
     const sequence2 = expectSequence(
       merge(store.getEventStream(calculateEvent).pipe(map(() => 3)), observable),
       [3, 3],
     );
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence2;
     expect(calculationCalled).toBe(3);
-    expect(store.isSubscribed(calculateEvent)).toBe(false);
+    expect(isSubscribed(store, calculateEvent)).toBe(false);
   });
 });

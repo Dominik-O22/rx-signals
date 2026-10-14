@@ -1,8 +1,7 @@
 import { beforeEach, describe, it } from 'vitest';
 import { of } from 'rxjs';
 import { filter, switchMap } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getEventId, getStateId } from '../src/store-utils';
+import { Store, getEventId, getStateId } from '../src';
 import { expectSequence } from './test-utils';
 
 describe('Event order', () => {
@@ -31,11 +30,11 @@ describe('Event order', () => {
   it('should preserve the order in which events are dispatched 1', async () => {
     const counterSequence = expectSequence(store.getBehavior(counterState), [0, 3, 6, 18, 21, 63]);
 
-    store.dispatch(addEvent, 3); // => 3
-    store.dispatch(addEvent, 3); // => 6
-    store.dispatch(multiplyEvent, 3); // => 18
-    store.dispatch(addEvent, 3); // => 21
-    store.dispatch(multiplyEvent, 3); // => 63
+    void store.dispatch(addEvent, 3); // => 3
+    void store.dispatch(addEvent, 3); // => 6
+    void store.dispatch(multiplyEvent, 3); // => 18
+    void store.dispatch(addEvent, 3); // => 21
+    void store.dispatch(multiplyEvent, 3); // => 63
 
     await counterSequence;
   });
@@ -46,11 +45,11 @@ describe('Event order', () => {
       [0, 3, 6, 24, 27, 81, 82, 83],
     );
 
-    store.dispatch(addEvent, 3); // => 3
-    store.dispatch(addEvent, 3); // => 6
-    store.dispatch(multiplyEvent, 4); // => 24 (Queuing effect that adds +1 two times)
-    store.dispatch(addEvent, 3); // => 27
-    store.dispatch(multiplyEvent, 3); // => 81 => 82 => 83 (82 and 83 from effect)
+    void store.dispatch(addEvent, 3); // => 3
+    void store.dispatch(addEvent, 3); // => 6
+    void store.dispatch(multiplyEvent, 4); // => 24 (Queuing effect that adds +1 two times)
+    void store.dispatch(addEvent, 3); // => 27
+    void store.dispatch(multiplyEvent, 3); // => 81 => 82 => 83 (82 and 83 from effect)
 
     await counterSequence;
   });

@@ -1,17 +1,19 @@
 import { beforeEach, describe, it } from 'vitest';
 import { type Observable, of, Subject } from 'rxjs';
 import { delay } from 'rxjs/operators';
-import { type Signals } from '../src/signals-factory';
-import { type Effect, Store } from '../src/store';
-import { expectSequence, withSubscription } from './test-utils';
-import { getEffectId, getStateId } from './../src/store-utils';
 import {
+  type Signals,
+  type Effect,
+  Store,
+  getEffectId,
+  getStateId,
   getValidatedInputWithResultSignalsFactory,
   type ValidatedInputWithResult,
   type ValidatedInputWithResultFactory,
   type ValidatedInputWithResultInput,
   type ValidatedInputWithResultOutput,
-} from './../src/validated-input-with-result-signals-factory';
+} from '../src';
+import { expectSequence, withSubscription } from './test-utils';
 
 describe('validated input with result signals factory', () => {
   type InputModel = {
@@ -32,6 +34,7 @@ describe('validated input with result signals factory', () => {
   const validationEffectId = getEffectId<InputModel, ValidationResult>();
   const validationEffect: Effect<InputModel, ValidationResult> = (input: InputModel) => {
     if (input.searchString === 'throw') {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
       throw 'unhandled';
     }
     return of(input.searchString === 'invalid' ? 'nope' : null).pipe(delay(10));
@@ -40,6 +43,7 @@ describe('validated input with result signals factory', () => {
   const resultEffectId = getEffectId<InputModel, ResultModel>();
   const resultEffect: Effect<InputModel, ResultModel> = (input: InputModel) => {
     if (input.searchString === 'throw') {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
       throw 'unhandled';
     }
     if (input.page > 0) {
@@ -76,8 +80,8 @@ describe('validated input with result signals factory', () => {
         .extendSetup((store, inIds) => {
           store.connect(inputStateId, inIds.input);
         })
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         nameExtension: 'test',
       });
@@ -188,9 +192,11 @@ describe('validated input with result signals factory', () => {
         ValidationResult,
         ResultModel
       >()
-        .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .extendSetup((store, inIds) => {
+          store.connect(inputStateId, inIds.input);
+        })
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       signals = factory.build({
         withResultTrigger: true,
       });
@@ -332,7 +338,7 @@ describe('validated input with result signals factory', () => {
           },
         },
       ]);
-      store.dispatch(signals.input.resultTrigger);
+      void store.dispatch(signals.input.resultTrigger);
       await sequence3;
     });
 
@@ -369,7 +375,7 @@ describe('validated input with result signals factory', () => {
         });
         await sequence;
 
-        store.dispatch(signals.input.resultTrigger);
+        void store.dispatch(signals.input.resultTrigger);
 
         const sequence2 = expectSequence(observable, [
           {
@@ -434,9 +440,11 @@ describe('validated input with result signals factory', () => {
         ValidationResult,
         ResultModel
       >()
-        .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .extendSetup((store, inIds) => {
+          store.connect(inputStateId, inIds.input);
+        })
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         initialResultGetter: () => ({
           results: [],
@@ -521,9 +529,11 @@ describe('validated input with result signals factory', () => {
         ValidationResult,
         ResultModel
       >()
-        .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .extendSetup((store, inIds) => {
+          store.connect(inputStateId, inIds.input);
+        })
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         resultEffectInputEquals: (a, b) => a.searchString === b.searchString,
       });

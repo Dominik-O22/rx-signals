@@ -1,103 +1,51 @@
 import {
-  asyncScheduler,
-  BehaviorSubject,
-  config,
-  EMPTY,
-  merge,
-  NEVER,
-  type Observable,
-  of,
-} from 'rxjs';
-import {
-  delay,
+  catchError,
+  defer,
   distinctUntilChanged,
   filter,
   map,
-  mergeMap,
+  merge,
+  NEVER,
+  type Observable,
   share,
+  Subject,
   switchMap,
-  take,
-  withLatestFrom,
-} from 'rxjs/operators';
-import { ControlledSubject } from './controlled-subject';
-import { DelayedEventQueue } from './delayed-event-queue';
-import { SourceObservable } from './source-observable';
+  takeUntil,
+} from 'rxjs';
+import { type Demand } from './cells/demand';
+import { DerivedCell } from './cells/derived-cell';
+import { EventCell } from './cells/event-cell';
+import { type Initial } from './cells/initial';
+import { StateCell } from './cells/state-cell';
+import { reportUnhandled, type StoreError, type StoreOptions } from './errors';
 import {
-  type BehaviorId,
+  type AnyBehaviorId,
+  type AnyEffectId,
+  type AnyEventId,
+  type AnyStateId,
   type DerivedId,
   type EffectId,
   type EventId,
-  isBehaviorId,
-  isDerivedId,
-  isStateId,
-  NO_VALUE,
-  type SignalId,
+  type ReadableSignal,
+  type ReadsAs,
   type StateId,
-  type ToBehaviorIdValueType,
   type ToEventIdValueType,
-  type ToSignalIdValueType,
-} from './store-utils';
+  type WritableBehavior,
+  type WritableEvent,
+  type WritesAs,
+} from './ids';
+import { defaultSchedule, EventQueue } from './queue';
 
-/**
- * The rx-signals Store uses the TypedEvent<T> to bundle certain events and their
- * corresponding EventId<T>. This is used for EventSources that can dispatch events
- * of different types (see addXTypedEventSource methods) or for cases where you want to
- * subscribe multiple events and need to differentiate between them at runtime.
- *
- * @typedef {object} TypedEvent<T> - type for an object bundling identifier and corresponding event.
- * @template T - specifies the type for the corresponding EventId<T>
- * @property {EventId<T>} type - the EventId for the event
- * @property {T} event - the event itself
- */
-export type TypedEvent<T> = Readonly<{
-  type: EventId<T>;
-  event: T;
-}>;
+/** An event id bundled with its payload, for sources and streams that carry several event types. */
+export type TypedEvent<T> = Readonly<{ type: EventId<T>; event: T }>;
 
-/**
- * The state reducer type specifies the signature for reducers used by the store.
- * StateReducers must be pure functions.
- *
- * @typedef {function} StateReducer<T, E> - type for a pure function that takes a state and an event and returns a new state
- * @template T - representing the type of the state
- * @template E - representing the type of the event
- * @property {T} state - the current state
- * @property {E} event - the event
- * @returns {T} - the new state
- */
+/** `TypedEvent` for each id of a union: `TypedEventOf<EventId<A> | EventId<B>>` is `TypedEvent<A> | TypedEvent<B>`. */
+export type TypedEventOf<ID> = ID extends EventId<infer T> ? TypedEvent<T> : never;
+
+/** Pure. If it throws, the state keeps its value and the error goes to `onError`. */
 export type StateReducer<T, E> = (state: T, event: E) => T;
 
-/**
- * A LifecycleHandle can be used to control signals and signal-sources that
- * are added to the store by store.getLifecycleHandle
- *
- * @property {function} reset - reset all behaviors corresponding to this lifecycle
- * @property {function} end - remove all sources of this lifecycle and complete all corresponding behaviors (event-subscribers will NOT get a complete!)
- */
-export type LifecycleHandle = {
-  reset: () => void;
-  end: () => void;
-};
-
-/**
- * The Effect type specifies a potentially impure function that takes an input and the store as arguments
- * and returns an effectful result as Observable.
- * It is the low-level abstraction used by rx-signals for side-effect isolation.
- * The high-level abstraction EffectSignalsFactory takes an EffectId as configuration to access
- * the corresponding Effect.
- * The store argument can be used to access additional input from the store (thus, the Effect itself could also
- * be pure and just use something impure that was put into the store, e.g. another Effect).
- * The previousInput argument can be used e.g. to decide whether the effect must perform
- * a computation/query/etc., or if maybe the previousResult can be returned directly.
- *
- * @typedef {function} Effect<Input, Result> - function performing an effect and returning an observable with the result
- * @template Input - specifies the input type for the effect
- * @template Result - specifies the result type for the effect
- * @property {Input} input - the effect input
- * @property {Store} store - the Store instance that will be passed to the function (e.g. to inject some other Effect).
- * @property {Input | undefined} previousInput - the input of the previous function invocation, or undefined
- * @property {Result | undefined} previousResult - the result of the previous function invocation, or undefined
- */
+/** Potentially impure. Only its first value is used by the effect factories. */
 export type Effect<Input, Result> = (
   input: Input,
   store: Store,
@@ -105,972 +53,497 @@ export type Effect<Input, Result> = (
   previousResult?: Result,
 ) => Observable<Result>;
 
+/** Both operations are idempotent, and `end()` after `reset()` still ends. */
+export type LifecycleHandle = {
+  /** Resets every behavior registered in the lifecycle to its initial value. */
+  readonly reset: () => void;
+  /** Removes everything registered in the lifecycle. Its behaviors complete, event streams do not. */
+  readonly end: () => void;
+};
+
+const eventSourceHandle: unique symbol = Symbol('rx-signals.EventSourceHandle');
+/** Identifies an event source for `removeEventSource`. */
+export type EventSourceHandle = { readonly [eventSourceHandle]: string };
+
+// What the store does with cells of any value type. Method syntax keeps these bivariant, so a
+// `StateCell<number>` is a `BehaviorCell` although the cell classes are invariant.
+type BehaviorCell = {
+  readonly sourceCount: number;
+  readonly value: { readonly demand: Demand };
+  suspend(): void;
+  resume(): void;
+  detach(): void;
+  dispose(): void;
+};
+type AnyEventCell = {
+  readonly sourceCount: number;
+  readonly demand: Demand;
+  dispatch(value: unknown): Promise<boolean>;
+  addSource(handle: object, source: Observable<unknown>): void;
+  removeSource(handle: object): void;
+  dispose(): void;
+};
+/** An id seen through either view; private accessors take this to tie a cell's type to its id. */
+type Typed<T> = ReadsAs<T> | WritesAs<T>;
+
+/** What `getLifecycleHandle` records for one call of `#register`. */
+type Registration = { readonly undo: () => void; readonly resets?: BehaviorCell };
+
+/** Read access for the `/testing` entry, which is not part of the main entry. */
+export type StoreInternals = {
+  readonly behaviorCell: (id: AnyBehaviorId) => BehaviorCell;
+  readonly eventCell: (id: AnyEventId) => AnyEventCell;
+  readonly queue: EventQueue;
+};
+
+// Cells are keyed by id, and an id's value type is its cell's value type. A Map cannot express
+// that link, so this is the one place that restores it.
+const cellFor = <Cell>(cells: Map<object, unknown>, id: object, create: () => Cell): Cell => {
+  const existing = cells.get(id);
+  if (existing !== undefined) return existing as Cell;
+  const cell = create();
+  cells.set(id, cell);
+  return cell;
+};
+
+// Two phases, so no cell resumes next to a neighbor that is not reset yet. States resume before
+// derived cells, so derived cells reconnect against fresh state.
+const resetCells = (cells: readonly BehaviorCell[]): void => {
+  const unique = [...new Set(cells)];
+  unique.forEach(cell => {
+    cell.suspend();
+  });
+  unique.forEach(cell => {
+    if (cell instanceof StateCell) cell.resume();
+  });
+  unique.forEach(cell => {
+    if (cell instanceof DerivedCell) cell.resume();
+  });
+};
+
+let internalsOf: (store: Store) => StoreInternals;
+
+/** For the `/testing` entry only. */
+export const inspectStore = (store: Store): StoreInternals => internalsOf(store);
+
 /**
- * The rx-signals Store provides RxJs-Observables for RP (reactive programming) BehaviorStreams
- * and EventStreams (behaviors and events are the two different types of signals, where behaviors represent state).
- * The Store separates the sources of these streams from the streams itself.
+ * The store. Also the Angular DI token.
  *
- * @class Store
+ * Registration mistakes throw at the call (a second initial value, a second reducer for one event).
+ * Runtime failures never throw into callers and never break a cell: reducers, state feeds and event
+ * sources report to `onError`; a derived source's error reaches that behavior's subscribers.
  */
 export class Store {
-  private delayedEventQueue = new DelayedEventQueue();
+  // Set once: in the constructor, or by createChildStore for a child, which shares its root's
+  // queue and error handler so event order and error policy span the tree.
+  #parent: Store | null = null;
+  #queue: EventQueue;
+  #report: (error: StoreError) => void;
+  readonly #states = new Map<AnyBehaviorId, BehaviorCell>();
+  readonly #derived = new Map<AnyBehaviorId, BehaviorCell>();
+  readonly #effects = new Map<AnyEffectId, BehaviorCell>();
+  readonly #events = new Map<AnyEventId, AnyEventCell>();
+  #recording: Registration[] | null = null;
+  // Fires on completeAllSignals. A child's streams also read the parent, which keeps running, so
+  // they stop on this instead of on their cells completing.
+  readonly #ended = new Subject<void>();
 
-  private readonly behaviors = new Map<symbol, ControlledSubject<any>>();
+  static {
+    internalsOf = store => ({
+      behaviorCell: id => store.#behaviorCell(id),
+      eventCell: id => store.#anyEventCell(id),
+      queue: store.#queue,
+    });
+  }
 
-  private readonly eventStreams = new Map<symbol, ControlledSubject<any>>();
+  constructor(options: StoreOptions = {}) {
+    this.#queue = new EventQueue(options.schedule ?? defaultSchedule);
+    this.#report = options.onError ?? reportUnhandled;
+  }
 
-  private readonly behaviorsSubject = new BehaviorSubject<Map<symbol, ControlledSubject<any>>>(
-    new Map<symbol, ControlledSubject<any>>(),
-  );
-
-  private readonly eventStreamsSubject = new BehaviorSubject<Map<symbol, ControlledSubject<any>>>(
-    new Map<symbol, ControlledSubject<any>>(),
-  );
-
-  private readonly names = new Map<symbol, string>();
-
-  private parentStore: Store | null = null;
-
-  private currentLifecycleObjects: null | { behaviors: symbol[]; events: symbol[] } = null;
-
-  /**
-   * Get the parent store of this store, or null in case it has no parent store.
-   *
-   * @returns {Store | null}
-   */
   getParentStore(): Store | null {
-    return this.parentStore ?? null;
+    return this.#parent;
   }
 
-  /**
-   * Get the root store of this store, in case this store is a child store in a hierarchy of parent-child stores.
-   * Returns itself, if this store has no parent.
-   *
-   * @returns {Store}
-   */
   getRootStore(): Store {
-    let result: Store = this;
-    while (result.parentStore) {
-      result = result.parentStore;
-    }
-    return result;
+    return this.#parent?.getRootStore() ?? this;
   }
 
   /**
-   * Create and return a child store of this store. Event-subscribers of the child store will receive
-   * events from the parent (and its parents) and their own events (see getEventStream). However,
-   * events dispatched on the child will not propagate to the parent. The child will use the same event
-   * queue as the parent to ensure correct event order even between parent-child boundaries.
-   * Behavior-subscribers of the child will receive the observable from the parent, as long as no
-   * corresponding behavior source is added to the child. It will switch to the child, once a source is
-   * added there (see getBehavior).
-   *
-   * @returns {Store}
+   * Parent events reach child subscribers; child events do not reach the parent. A child reads a
+   * behavior or effect from its parent until it registers its own source for the id, then switches.
    */
   createChildStore(): Store {
-    const childStore = new Store();
-    childStore.parentStore = this;
-    childStore.delayedEventQueue = this.delayedEventQueue;
-    return childStore;
+    const child = new Store();
+    child.#parent = this;
+    child.#queue = this.#queue;
+    child.#report = this.#report;
+    return child;
   }
 
-  // This method was public in pre-3.0.0-rc22 versions, however, distinction between
-  // lazy and eager subscriptions becomes much clearer and less error-prone, when
-  // differentiating between StateId and DerivedId, which I introduced with 3.0.0-rc22.
-  // Thus, to protect users from misusage, I made this low-level method private.
-  private addBehavior<ID extends BehaviorId<any>>(
-    identifier: ID,
-    observable: Observable<ToBehaviorIdValueType<ID>>,
-    subscribeLazy: boolean,
-    initialValueOrValueGetter:
-      ToBehaviorIdValueType<ID> | (() => ToBehaviorIdValueType<ID>) | symbol = NO_VALUE,
+  /** Eager state. Throws if `id` already has an initial value or a feed. */
+  addState<T>(id: StateId<T>, initial: Initial<NoInfer<T>>): void {
+    const cell = this.#stateCell<T>(id);
+    this.#register(() => {
+      cell.setBase({ kind: 'initial', initial });
+      return {
+        undo: () => {
+          this.#drop(this.#states, id, cell);
+        },
+        resets: cell,
+      };
+    });
+  }
+
+  /** Lazy state. Throws if `id` already has a source. The initial value is applied on first demand. */
+  addDerivedState<T>(
+    id: DerivedId<T>,
+    source: Observable<NoInfer<T>>,
+    initial?: Initial<NoInfer<T>>,
   ): void {
-    this.assertSourceExists(identifier, identifier);
-    this.getBehaviorControlledSubject(identifier).addSource(
-      new SourceObservable<ToBehaviorIdValueType<ID>>(
-        identifier,
-        observable,
-        subscribeLazy,
-        initialValueOrValueGetter,
+    this.#addDerived(id, source, initial);
+  }
+
+  /** Reducers may come before `addState`; events arriving before the initial value are dropped. */
+  addReducer<T, E>(
+    id: StateId<T>,
+    event: EventId<E>,
+    reducer: StateReducer<NoInfer<T>, NoInfer<E>>,
+  ): void {
+    const cell = this.#stateCell<T>(id);
+    this.#register(() => {
+      cell.addReducer(event, this.getEventStream(event), reducer, cause => {
+        this.#report({ origin: 'reducer', state: id, event, cause });
+      });
+      return {
+        undo: () => {
+          cell.removeReducer(event);
+        },
+      };
+    });
+  }
+
+  removeReducer(id: AnyStateId, event: AnyEventId): void {
+    const cell = this.#states.get(id);
+    if (cell instanceof StateCell) cell.removeReducer(event);
+  }
+
+  /**
+   * Feeds `target` from `source`, which may be narrower than the target. Derived and event targets
+   * are lazy; a state target is subscribed eagerly and has no initial value. Throws if a behavior
+   * target already has a source.
+   */
+  connect<T>(source: ReadableSignal<T>, target: WritableBehavior<T>): void;
+  connect<T>(source: ReadableSignal<T>, target: WritableEvent<T>): EventSourceHandle;
+  connect<T>(
+    source: ReadableSignal<T>,
+    target: WritableBehavior<T> | WritableEvent<T>,
+  ): EventSourceHandle | undefined {
+    const observable =
+      source.kind === 'event' ? this.#eventStream<T>(source) : this.#behavior<T>(source);
+    return this.#connect(observable, target);
+  }
+
+  connectObservable<T>(source: Observable<T>, target: WritableBehavior<T>): void;
+  connectObservable<T>(source: Observable<T>, target: WritableEvent<T>): EventSourceHandle;
+  connectObservable<T>(
+    source: Observable<T>,
+    target: WritableBehavior<T> | WritableEvent<T>,
+  ): EventSourceHandle | undefined {
+    return this.#connect(source, target);
+  }
+
+  /**
+   * The current value on subscribe once there is one, then every distinct change. Subscribing a
+   * derived behavior connects its source; the latest value survives zero subscribers.
+   */
+  getBehavior<T>(id: AnyBehaviorId & ReadsAs<T>): Observable<T> {
+    return this.#behavior(id);
+  }
+
+  /** Removes every source and reducer. Subscribers stay and keep the last value. */
+  removeBehaviorSources(id: AnyBehaviorId): void {
+    this.#behaviorCell(id).detach();
+  }
+
+  /** Removes every source and reducer, then completes the subscribers. */
+  completeBehavior(id: AnyBehaviorId): void {
+    this.#drop(this.#states, id, this.#states.get(id));
+    this.#drop(this.#derived, id, this.#derived.get(id));
+  }
+
+  /** Ends this store: every cell is dropped and its subscribers complete. The store stays usable. */
+  completeAllSignals(): void {
+    for (const table of [this.#states, this.#derived, this.#effects, this.#events]) {
+      table.forEach(cell => {
+        cell.dispose();
+      });
+      table.clear();
+    }
+    this.#ended.next();
+  }
+
+  /** Back to initial values: every state, effect and derived behavior of this store. */
+  resetBehaviors(): void {
+    resetCells([...this.#states.values(), ...this.#effects.values(), ...this.#derived.values()]);
+  }
+
+  /**
+   * Queues an event. Resolves `true` once it was delivered, `false` right away if nobody listens.
+   * Never rejects. The payload is optional when `undefined` is a valid payload.
+   */
+  dispatch<ID extends AnyEventId>(
+    id: ID,
+    ...event: undefined extends ToEventIdValueType<ID>
+      ? [event?: ToEventIdValueType<ID>]
+      : [event: ToEventIdValueType<ID>]
+  ): Promise<boolean>;
+  dispatch(id: AnyEventId, event?: unknown): Promise<boolean> {
+    return this.#anyEventCell(id).dispatch(event);
+  }
+
+  /** Always asynchronous. In a child store, this merges the parent's stream with the child's. */
+  getEventStream<T>(id: AnyEventId & ReadsAs<T>): Observable<T> {
+    return this.#eventStream(id);
+  }
+
+  getTypedEventStream<T>(id: EventId<T>): Observable<TypedEvent<T>> {
+    return this.#eventStream(id).pipe(map(event => ({ type: id, event })));
+  }
+
+  /** Lazy: subscribed while the event has subscribers. An erroring source is reported and retried on the next demand. */
+  addEventSource<T>(id: EventId<T>, source: Observable<NoInfer<T>>): EventSourceHandle {
+    return this.#addEventSources([id], () => this.#guard([id], source));
+  }
+
+  /**
+   * One source emitting several event types. With `onlyWhileSubscribed`, the source runs only while
+   * that event has subscribers. Each emission takes one queue hop, like every other event.
+   */
+  addTypedEventSource<IDS extends readonly AnyEventId[]>(
+    ids: IDS,
+    source: Observable<TypedEventOf<IDS[number]>>,
+    options: { readonly onlyWhileSubscribed?: AnyEventId } = {},
+  ): EventSourceHandle {
+    const shared = this.#guard(ids, source).pipe(share());
+    const gate = options.onlyWhileSubscribed;
+    const running =
+      gate === undefined
+        ? shared
+        : this.#anyEventCell(gate).demand.subscribed$.pipe(
+            switchMap(subscribed => (subscribed ? shared : NEVER)),
+          );
+    return this.#addEventSources(ids, id =>
+      running.pipe(
+        filter(typed => typed.type === id),
+        map(typed => typed.event),
       ),
     );
-    if (this.parentStore) {
-      // to trigger behavior-switch in child-stores (see getBehavior):
-      this.behaviorsSubject.next(this.behaviors);
-    }
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.behaviors.push(identifier);
-    }
   }
 
-  /**
-   * This adds an observable representing derived state, hence state that
-   * depends on other behaviors, to the store.
-   * The store will not eagerly subscribe the given observable.
-   * While derived state usually depends on other Behaviors and not on events, there are still
-   * valid use-cases where the given observable might depend on an event.
-   * E.g., if you want to transform an event-stream into a lazily-subscribed behavior (However, the
-   * more idiomatic way to do this would be to use the connect method instead.).
-   *
-   * @param {DerivedId<T>} identifier - the unique identifier for the derived-state behavior
-   * @param {Observable<T>} observable - the source for the behavior
-   * @param {T | (() => T) | symbol} initialValueOrValueGetter - the initial value or value getter (for lazy initialization) or symbol NO_VALUE, if there is no initial value (default)
-   * @throws if a state for the given identifier has already been added to this Store
-   * @returns {void}
-   */
-  addDerivedState<ID extends DerivedId<any>>(
-    identifier: ID,
-    observable: Observable<ToBehaviorIdValueType<ID>>,
-    initialValueOrValueGetter:
-      ToBehaviorIdValueType<ID> | (() => ToBehaviorIdValueType<ID>) | symbol = NO_VALUE,
-  ): void {
-    this.addBehavior(identifier, observable, true, initialValueOrValueGetter);
+  removeEventSource(handle: EventSourceHandle): void {
+    this.#events.forEach(cell => {
+      cell.removeSource(handle);
+    });
   }
 
-  /**
-   * This method adds a source for the state specified by the given identifier, that provides the
-   * given value as initial value for the corresponding behavior.
-   * It will be the only value, as long as no reducer is added.
-   * Use this for root-state only, hence state that only depends on events, but not on any other behavior.
-   * The store will eagerly subscribe all reducers being added for the state.
-   * If one of those reducers depends on an event-source that should be lazy, this situation
-   * can be solved using one of the addXTypedEventSource methods (see corresponding documentation) for the
-   * corresponding event-source.
-   *
-   * @param {StateId<T>} identifier - the unique identifier for the root-state behavior
-   * @param {T | (() => T)} initialValueOrValueGetter - the initial value or value getter
-   * @throws if a state for the given identifier has already been added to this Store
-   * @returns {void}
-   */
-  addState<ID extends StateId<any>>(
-    identifier: ID,
-    initialValueOrValueGetter: ToBehaviorIdValueType<ID> | (() => ToBehaviorIdValueType<ID>),
-  ): void {
-    this.addBehavior(identifier, NEVER, false, initialValueOrValueGetter);
+  /** Throws if `id` already has an effect. */
+  addEffect<Input, Result>(id: EffectId<Input, Result>, effect: Effect<Input, Result>): void {
+    const cell = this.#effectCell<Input, Result>(id);
+    this.#register(() => {
+      cell.setBase({ kind: 'initial', initial: () => effect });
+      return {
+        undo: () => {
+          this.#drop(this.#effects, id, cell);
+        },
+        resets: cell,
+      };
+    });
   }
 
-  /**
-   * This adds a reducer to a behavior. This is meant to be used together with the addState method.
-   * The corresponding event will be subscribed eagerly by the store.
-   * If the event comes from an event-source that should be lazy, this situation
-   * can be solved using one of the addXTypedEventSource methods (see corresponding documentation) for this
-   * event-source (another solution would be to switchMap the event-source depending on whatever condition).
-   *
-   * @param {StateId<T>} stateIdentifier - the unique identifier for the root-state behavior
-   * @param {EventId<T>} eventIdentifier - the unique identifier for the event reducing the state
-   * @param {StateReducer<T, E>} reducer - pure function that takes the previous state and the event and returns a new state
-   * @returns {void}
-   */
-  addReducer<SID extends StateId<any>, EID extends EventId<any>>(
-    stateIdentifier: SID,
-    eventIdentifier: EID,
-    reducer: StateReducer<ToBehaviorIdValueType<SID>, ToEventIdValueType<EID>>,
-  ): void {
-    const sourceObservable = this.getEventStream(eventIdentifier).pipe(
-      withLatestFrom(this.getBehavior(stateIdentifier)),
-      mergeMap(([event, state]) => {
-        try {
-          return of(reducer(state, event));
-        } catch (error) {
-          // Erroring the source would complete the behavior and lose the state for good.
-          // Keep the previous state and report the error the way rxjs reports unhandled errors.
-          if (config.onUnhandledError) {
-            config.onUnhandledError(error);
-          } else {
-            setTimeout(() => {
-              throw error;
-            });
-          }
-          return EMPTY;
-        }
-      }),
-    );
-    this.getBehaviorControlledSubject(stateIdentifier).addSource(
-      new SourceObservable<ToBehaviorIdValueType<SID>>(eventIdentifier, sourceObservable, false),
+  /** Emits the effect once it is added, from this store or else its parent. */
+  getEffect<Input, Result>(id: EffectId<Input, Result>): Observable<Effect<Input, Result>> {
+    return defer(() =>
+      this.#ownOrParent(this.#effectCell<Input, Result>(id), parent => parent.getEffect(id)),
     );
   }
 
   /**
-   * This method can be used to remove a reducer from a root-state behavior.
-   *
-   * @param {StateId<T>} stateIdentifier - the unique identifier for the root-state behavior
-   * @param {EventId<T>} eventIdentifier - the unique identifier for the event the reducer is handling
-   * @returns {void}
+   * Everything registered on this store while `register` runs belongs to the lifecycle: states,
+   * derived states, reducers, feeds, event sources and effects. Lifecycles do not nest.
    */
-  removeReducer<T, E>(stateIdentifier: StateId<T>, eventIdentifier: EventId<E>): void {
-    this.getBehaviorControlledSubject(stateIdentifier).removeSource(eventIdentifier);
-  }
-
-  /**
-   * The connect method takes a source- and a target-ID and adds a corresponding source for the targetId
-   * to the store, connecting the source event or behavior with the target event or behavior.
-   * Thus, if targetId is a BehaviorId, a source must not yet exist in the store, else this method will throw a corresponding error!
-   *
-   * @param {SignalId<S extends T>} sourceId - the unique identifier for the source event or behavior
-   * @param {SignalId<T>} targetId - the unique identifier for the target event or behavior
-   * @throws if targetId is a BehaviorId and already exists in this Store
-   * @returns {void | symbol} - symbol of the added event source in case the targetId is an EventId, else void
-   */
-  connect<TID extends SignalId<any>, S extends ToSignalIdValueType<TID>>(
-    sourceId: SignalId<S>,
-    targetId: TID,
-  ): TID extends BehaviorId<ToSignalIdValueType<TID>> ? void : symbol {
-    // We must use <TID extends SignalId, S extends ToSignalIdValueType<TID>>,
-    // because for some reason, TS does not enforce S extends T, if we
-    // use <T, S extends T, TID extends SignalId> (which it should in my opinion)
-    const source = isBehaviorId(sourceId)
-      ? this.getBehavior(sourceId as BehaviorId<S>)
-      : this.getEventStream(sourceId as EventId<S>);
-    return this.connectObservable(source, targetId);
-  }
-
-  /**
-   * This connects the source observable with the target event or behavior.
-   * If the targetId is a BehaviorId, a corresponding behavior source will be added
-   * to the store.
-   * If the targetId is an EventId, a corresponding EventSource will be added to the store.
-   * Hence, if targetId is a BehaviorId, it must not yet exist in the store, else this method will throw a corresponding error!
-   *
-   * @param {Observable<S extends T>} source - the source observable
-   * @param {SignalId<T>} targetId - the unique identifier for the target event or behavior
-   * @throws if targetId is a BehaviorId and already exists in this Store
-   * @returns {void | symbol} - symbol of the added event source in case the targetId is an EventId, else void
-   */
-  connectObservable<TID extends SignalId<any>, S extends ToSignalIdValueType<TID>>(
-    source: Observable<S>,
-    targetId: TID,
-  ): TID extends BehaviorId<ToSignalIdValueType<TID>> ? void : symbol {
-    if (isDerivedId(targetId)) {
-      return this.addDerivedState(
-        targetId as DerivedId<ToSignalIdValueType<TID>>,
-        source,
-      ) as TID extends BehaviorId<ToSignalIdValueType<TID>> ? void : symbol;
-    }
-    if (isStateId(targetId)) {
-      return this.addBehavior(
-        targetId as BehaviorId<ToSignalIdValueType<TID>>,
-        source,
-        false,
-      ) as TID extends BehaviorId<ToSignalIdValueType<TID>> ? void : symbol;
-    }
-    return this.addEventSource(
-      targetId as EventId<ToSignalIdValueType<TID>>,
-      source,
-    ) as TID extends BehaviorId<ToSignalIdValueType<TID>> ? void : symbol;
-  }
-
-  /**
-   * This method removes all sources for a behavior.
-   * (Yes, from the API-point-of-view, there can be only one source for a behavior. However, technically
-   *  each reducer added for a root-state-behavior also represents a source.)
-   *
-   * @param {BehaviorId<T>} identifier - the unique identifier for the behavior
-   * @returns {void}
-   */
-  removeBehaviorSources<T>(identifier: BehaviorId<T>): void {
-    const behavior = this.getBehaviorControlledSubject(identifier);
-    behavior.removeAllSources();
-  }
-
-  /**
-   * This method removes all sources for a behavior and then completes the behavior for all
-   * current subscribers and removes it from the store.
-   *
-   * @param {BehaviorId<T>} identifier - the unique identifier for the behavior
-   * @returns {void}
-   */
-  completeBehavior<T>(identifier: BehaviorId<T>): void {
-    const behavior = this.getBehaviorControlledSubject(identifier);
-    behavior.removeAllSources();
-    behavior.complete();
-    this.behaviors.delete(identifier);
-    this.names.delete(identifier);
-    this.behaviorsSubject.next(this.behaviors);
-  }
-
-  /**
-   * This method removes all sources for all behaviors and all event
-   * streams and then completes them for all current subscribers and removes them
-   * from the store.
-   * This method should be used to end a stores lifetime (e.g. for a child store), to make
-   * sure no non-lazy subscriptions keep the store alife (hence avoiding memory leaks)!
-   *
-   * @returns {void}
-   */
-  completeAllSignals(): void {
-    [...this.behaviors.keys()].forEach(key => {
-      const behavior = this.behaviors.get(key);
-      behavior?.removeAllSources();
-      behavior?.complete();
-      this.behaviors.delete(key);
-      this.names.delete(key);
-    });
-    [...this.eventStreams.keys()].forEach(key => {
-      const eventStream = this.eventStreams.get(key);
-      eventStream?.removeAllSources();
-      eventStream?.complete();
-      this.eventStreams.delete(key);
-      this.names.delete(key);
-    });
-    this.behaviorsSubject.next(this.behaviors);
-    this.eventStreamsSubject.next(this.eventStreams);
-  }
-
-  /**
-   * This method takes a callback that performs Store operations.
-   * It returns a LifecycleHandle that can be used to reset or end the lifecycle of signals
-   * and signal-sources that are added to the store during the callback execution.
-   *
-   * @param {function} lifecycleRegistrationCallback - behaviors and event-sources added within this callback will be part of the lifecycle
-   * @throws if this method is called while already inside another lifecycleRegistrationCallback for this Store
-   * @returns {LifecycleHandle}
-   */
-  getLifecycleHandle(lifecycleRegistrationCallback: (store: Store) => void): LifecycleHandle {
-    if (this.currentLifecycleObjects !== null) {
+  getLifecycleHandle(register: (store: Store) => void): LifecycleHandle {
+    if (this.#recording !== null) {
       throw new Error(
         'getLifecycleHandle cannot be called while already within a lifecycleRegistrationCallback',
       );
     }
-    this.currentLifecycleObjects = {
-      behaviors: [],
-      events: [],
-    };
+    const registrations: Registration[] = [];
+    this.#recording = registrations;
     try {
-      lifecycleRegistrationCallback(this);
-    } catch (error) {
-      this.currentLifecycleObjects = null;
-      throw error;
+      register(this);
+    } finally {
+      this.#recording = null;
     }
-    let { behaviors, events } = this.currentLifecycleObjects;
-    this.currentLifecycleObjects = null;
+    let ended = false;
     return {
       reset: () => {
-        const resetHandles = behaviors.map(behavior =>
-          this.behaviors.get(behavior)?.getResetHandle(),
-        );
-        resetHandles.forEach(handle => handle?.removeSources());
-        resetHandles.forEach(handle => handle?.readdSources());
+        if (!ended) resetCells(registrations.flatMap(({ resets }) => (resets ? [resets] : [])));
       },
       end: () => {
-        behaviors.forEach(key => {
-          const behavior = this.behaviors.get(key);
-          behavior?.removeAllSources();
-          behavior?.complete();
-          this.behaviors.delete(key);
-          this.names.delete(key);
+        if (ended) return;
+        ended = true;
+        [...registrations].reverse().forEach(({ undo }) => {
+          undo();
         });
-        behaviors = [];
-        events.forEach(key => {
-          this.removeEventSource(key);
-        });
-        events = [];
-        this.behaviorsSubject.next(this.behaviors);
       },
     };
   }
 
-  /**
-   * This method returns the behavior specified by identifier. It does not matter, if a source
-   * for the behavior has already been added or not. If a source has already been added, a
-   * subscriber will get the latest value from the source. Else, a subscriber will get the
-   * initial value, as soon as a source is added.
-   * Please note, that all behaviors are shared and distinct value streams (hence you do not
-   * have to pipe with distinctUntilChanged and shareReplay yourself). The sharing behaves like
-   * shareReplay(1), but WITHOUT the risk of a memory leak that would be possible with shareReplay(1).
-   * If this store has a parent store, then as long as no behavior source is added for the child, the
-   * behavior will be received from the parent. As soon, as a corresponding source is added to the child,
-   * you will receive the behavior values from the child.
-   *
-   * @param {BehaviorId<T>} identifier - the unique identifier for the behavior
-   * @returns {Observable<T>} - the behavior observable (shared and distinct)
-   */
-  getBehavior<T>(identifier: BehaviorId<T>): Observable<T> {
-    if (this.parentStore) {
-      const parent: Store = this.parentStore;
-      return this.behaviorsSubject.pipe(
-        map(behaviors => (behaviors.get(identifier)?.getNumberOfSources() ?? 0) > 0),
-        // Only switch when the owner changes; re-subscribing on every unrelated
-        // behavior change would replay the current value as a duplicate.
-        distinctUntilChanged(),
-        switchMap(hasOwnSource =>
-          hasOwnSource
-            ? this.getBehaviorControlledSubject(identifier).getObservable()
-            : parent.getBehavior(identifier),
-        ),
-      );
-    }
-    return this.getBehaviorControlledSubject(identifier).getObservable();
+  /** The one path for every registration: `claim` throws on duplicates before anything is recorded. */
+  #register(claim: () => Registration): void {
+    const registration = claim();
+    this.#recording?.push(registration);
   }
 
-  /**
-   * This method resets all behaviors, effectively resetting the complete store to the state it
-   * had before any event was dispatched.
-   * Technically, this is done by first removing all sources and then adding them again.
-   *
-   * @returns {void} - the behavior observable (shared and distinct)
-   */
-  resetBehaviors(): void {
-    const resetHandles = [...this.behaviors.values()].map(behavior => behavior.getResetHandle());
-    resetHandles.forEach(handle => handle.removeSources());
-    resetHandles.forEach(handle => handle.readdSources());
-  }
-
-  /**
-   * This method is used to dispatch an event of the type specified by the given identifier.
-   * The only reason for returning a promise instead of directly returning a boolean is to simplify
-   * testing (e.g. make sure a dispatch is finished before checking the new state). In real code,
-   * awaiting the returned promise would be a severe code smell (dispatching an event is an effect
-   * and the only way to know an effect has been finished is to receive a corresponding message,
-   * either in form of another event, or in form of a corresponding new state)!
-   *
-   * @param {EventId<T>} identifier - the unique identifier for the event
-   * @param {T} event - the event of the type specified by the identifier (optional in case of void type)
-   * @returns {Promise<boolean>} - a promise that resolves to true, if the event was subscribed, else to false
-   */
-  dispatch(identifier: EventId<undefined>, event?: never): Promise<boolean>; // to make the event optional in case of EventId<undefined>
-  dispatch(identifier: EventId<void>, event?: never): Promise<boolean>;
-  dispatch<ID extends EventId<any>>(
-    identifier: ID,
-    event: ToEventIdValueType<ID>,
-  ): Promise<boolean>;
-  dispatch<ID extends EventId<any>>(
-    identifier: ID,
-    event: ToEventIdValueType<ID>,
-  ): Promise<boolean> {
-    const controlledSubject = this.getEventStreamControlledSubject(identifier);
-    if (controlledSubject.isObservableSubscribed()) {
-      const result: Promise<boolean> = this.getEventStream(identifier)
-        .pipe(
-          filter(val => val === event),
-          take(1),
-          map(() => true),
-          delay(1, asyncScheduler),
-        )
-        .toPromise() as Promise<boolean>;
-      controlledSubject.next(event);
-      return result;
-    }
-    return Promise.resolve(false);
-  }
-
-  /**
-   * This method adds an event source to the Store. There can be multiple sources
-   * for the same event type. However, each source must be identified by its own
-   * symbol and adding two sources with the same symbol would result in an error.
-   * Event sources are effects!
-   *
-   * @param {EventId<T>} eventIdentifier - the unique identifier for the event
-   * @param {Observable<T>} observable - the event source
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  addEventSource<ID extends EventId<any>>(
-    eventIdentifier: ID,
-    observable: Observable<ToEventIdValueType<ID>>,
-  ): symbol {
-    const sourceId = Symbol('');
-    this.getEventStreamControlledSubject(eventIdentifier).addSource(
-      new SourceObservable<ToEventIdValueType<ID>>(sourceId, observable, true),
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * In contrast to addEventSource, this method adds an event source to the Store
-   * that can dispatch two different event types A and B.
-   * If you set the optional parameter subscribeObservableOnlyIfEventIsSubscribed, the whole
-   * source will only be subscribed, if the event corresponding to this parameter is subscribed.
-   * A common use-case for this would be an effect that dispatches A as result and B as generic
-   * error event. If you have a central error handler listening to B, this would normally always
-   * subscribe the whole effect (you will listen for errors over the whole lifetime of your app),
-   * hence it would make lazy subscription of A impossible. But if you set subscribeObservableOnlyIfEventIsSubscribed
-   * to eventIdentifierA, then the whole source will only be subscribed as long as A is subscribed.
-   *
-   * @param {EventId<A>} eventIdentifierA - the unique identifier for event type A
-   * @param {EventId<B>} eventIdentifierB - the unique identifier for event type B
-   * @param {Observable<TypedEvent<A> | TypedEvent<B>>} observable - the event source
-   * @param {EventId<any> | null} subscribeObservableOnlyIfEventIsSubscribed - defaults to null
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  add2TypedEventSource<IDA extends EventId<any>, IDB extends EventId<any>>(
-    eventIdentifierA: IDA,
-    eventIdentifierB: IDB,
-    observable: Observable<
-      TypedEvent<ToEventIdValueType<IDA>> | TypedEvent<ToEventIdValueType<IDB>>
-    >,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null = null,
-  ): symbol {
-    const sourceId = Symbol('');
-    const sharedSource = this.getDependentObservable(
-      observable.pipe(delay(1, asyncScheduler), share()),
-      subscribeObservableOnlyIfEventIsSubscribed,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierA,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDA>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierB,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDB>>>,
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * See add2TypedEventSource
-   *
-   * @param {EventId<A>} eventIdentifierA - the unique identifier for event type A
-   * @param {EventId<B>} eventIdentifierB - the unique identifier for event type B
-   * @param {EventId<C>} eventIdentifierC - the unique identifier for event type C
-   * @param {Observable<TypedEvent<A> | TypedEvent<B> | TypedEvent<C>>} observable - the event source
-   * @param {EventId<any> | null} subscribeObservableOnlyIfEventIsSubscribed - defaults to null
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  add3TypedEventSource<
-    IDA extends EventId<any>,
-    IDB extends EventId<any>,
-    IDC extends EventId<any>,
-  >(
-    eventIdentifierA: IDA,
-    eventIdentifierB: IDB,
-    eventIdentifierC: IDC,
-    observable: Observable<
-      | TypedEvent<ToEventIdValueType<IDA>>
-      | TypedEvent<ToEventIdValueType<IDB>>
-      | TypedEvent<ToEventIdValueType<IDC>>
-    >,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null = null,
-  ): symbol {
-    const sourceId = Symbol('');
-    const sharedSource = this.getDependentObservable(
-      observable.pipe(delay(1, asyncScheduler), share()),
-      subscribeObservableOnlyIfEventIsSubscribed,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierA,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDA>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierB,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDB>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierC,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDC>>>,
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * See add2TypedEventSource
-   *
-   * @param {EventId<A>} eventIdentifierA - the unique identifier for event type A
-   * @param {EventId<B>} eventIdentifierB - the unique identifier for event type B
-   * @param {EventId<C>} eventIdentifierC - the unique identifier for event type C
-   * @param {EventId<D>} eventIdentifierD - the unique identifier for event type D
-   * @param {Observable<TypedEvent<A> | TypedEvent<B> | TypedEvent<C> | TypedEvent<D>>} observable - the event source
-   * @param {EventId<any> | null} subscribeObservableOnlyIfEventIsSubscribed - defaults to null
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  add4TypedEventSource<
-    IDA extends EventId<any>,
-    IDB extends EventId<any>,
-    IDC extends EventId<any>,
-    IDD extends EventId<any>,
-  >(
-    eventIdentifierA: IDA,
-    eventIdentifierB: IDB,
-    eventIdentifierC: IDC,
-    eventIdentifierD: IDD,
-    observable: Observable<
-      | TypedEvent<ToEventIdValueType<IDA>>
-      | TypedEvent<ToEventIdValueType<IDB>>
-      | TypedEvent<ToEventIdValueType<IDC>>
-      | TypedEvent<ToEventIdValueType<IDD>>
-    >,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null = null,
-  ): symbol {
-    const sourceId = Symbol('');
-    const sharedSource = this.getDependentObservable(
-      observable.pipe(delay(1, asyncScheduler), share()),
-      subscribeObservableOnlyIfEventIsSubscribed,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierA,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDA>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierB,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDB>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierC,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDC>>>,
-    );
-    this.addTypedEventSource(
-      sourceId,
-      eventIdentifierD,
-      sharedSource as Observable<TypedEvent<ToEventIdValueType<IDD>>>,
-    );
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * See add2TypedEventSource
-   *
-   * @param {EventId<A>} eventIdentifierA - the unique identifier for event type A
-   * @param {EventId<B>} eventIdentifierB - the unique identifier for event type B
-   * @param {EventId<C>} eventIdentifierC - the unique identifier for event type C
-   * @param {EventId<D>} eventIdentifierD - the unique identifier for event type D
-   * @param {EventId<E>} eventIdentifierE - the unique identifier for event type E
-   * @param {Observable<TypedEvent<A> | TypedEvent<B> | TypedEvent<C> | TypedEvent<D> | TypedEvent<E>>} observable - the event source
-   * @param {EventId<any> | null} subscribeObservableOnlyIfEventIsSubscribed - defaults to null
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  add5TypedEventSource<A, B, C, D, E>(
-    eventIdentifierA: EventId<A>,
-    eventIdentifierB: EventId<B>,
-    eventIdentifierC: EventId<C>,
-    eventIdentifierD: EventId<D>,
-    eventIdentifierE: EventId<E>,
-    observable: Observable<
-      TypedEvent<A> | TypedEvent<B> | TypedEvent<C> | TypedEvent<D> | TypedEvent<E>
-    >,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null = null,
-  ): symbol {
-    const sourceId = Symbol('');
-    const sharedSource = this.getDependentObservable(
-      observable.pipe(delay(1, asyncScheduler), share()),
-      subscribeObservableOnlyIfEventIsSubscribed,
-    );
-    this.addTypedEventSource(sourceId, eventIdentifierA, sharedSource as Observable<TypedEvent<A>>);
-    this.addTypedEventSource(sourceId, eventIdentifierB, sharedSource as Observable<TypedEvent<B>>);
-    this.addTypedEventSource(sourceId, eventIdentifierC, sharedSource as Observable<TypedEvent<C>>);
-    this.addTypedEventSource(sourceId, eventIdentifierD, sharedSource as Observable<TypedEvent<D>>);
-    this.addTypedEventSource(sourceId, eventIdentifierE, sharedSource as Observable<TypedEvent<E>>);
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * See add2TypedEventSource
-   *
-   * @param {EventId<A>} eventIdentifierA - the unique identifier for event type A
-   * @param {EventId<B>} eventIdentifierB - the unique identifier for event type B
-   * @param {EventId<C>} eventIdentifierC - the unique identifier for event type C
-   * @param {EventId<D>} eventIdentifierD - the unique identifier for event type D
-   * @param {EventId<E>} eventIdentifierE - the unique identifier for event type E
-   * @param {EventId<F>} eventIdentifierF - the unique identifier for event type F
-   * @param {Observable<TypedEvent<A> | TypedEvent<B> | TypedEvent<C> | TypedEvent<D> | TypedEvent<E> | TypedEvent<F>>} observable - the event source
-   * @param {EventId<any> | null} subscribeObservableOnlyIfEventIsSubscribed - defaults to null
-   * @returns {smybol} - a symbol that can be used to remove the event-source from the store
-   */
-  add6TypedEventSource<A, B, C, D, E, F>(
-    eventIdentifierA: EventId<A>,
-    eventIdentifierB: EventId<B>,
-    eventIdentifierC: EventId<C>,
-    eventIdentifierD: EventId<D>,
-    eventIdentifierE: EventId<E>,
-    eventIdentifierF: EventId<F>,
-    observable: Observable<
-      TypedEvent<A> | TypedEvent<B> | TypedEvent<C> | TypedEvent<D> | TypedEvent<E> | TypedEvent<F>
-    >,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null = null,
-  ): symbol {
-    const sourceId = Symbol('');
-    const sharedSource = this.getDependentObservable(
-      observable.pipe(delay(1, asyncScheduler), share()),
-      subscribeObservableOnlyIfEventIsSubscribed,
-    );
-    this.addTypedEventSource(sourceId, eventIdentifierA, sharedSource as Observable<TypedEvent<A>>);
-    this.addTypedEventSource(sourceId, eventIdentifierB, sharedSource as Observable<TypedEvent<B>>);
-    this.addTypedEventSource(sourceId, eventIdentifierC, sharedSource as Observable<TypedEvent<C>>);
-    this.addTypedEventSource(sourceId, eventIdentifierD, sharedSource as Observable<TypedEvent<D>>);
-    this.addTypedEventSource(sourceId, eventIdentifierE, sharedSource as Observable<TypedEvent<E>>);
-    this.addTypedEventSource(sourceId, eventIdentifierF, sharedSource as Observable<TypedEvent<F>>);
-    if (this.currentLifecycleObjects !== null) {
-      this.currentLifecycleObjects.events.push(sourceId);
-    }
-    return sourceId;
-  }
-
-  /**
-   * This method removes the specified event source.
-   *
-   * @param {symbol} sourceIdentifier - the unique identifier for the event source
-   * @returns {void}
-   */
-  removeEventSource(sourceIdentifier: symbol): void {
-    this.eventStreams.forEach(cs => cs.removeSource(sourceIdentifier));
-  }
-
-  /**
-   * This method returns an observable for events of the specified type.
-   * Please note, that all observables for the same identifier are already piped with delay(1, asyncScheduler)
-   * and share(). So events will always be received asynchronously (expecting synchronous event dispatch would
-   * be a strong indicator of flawed design, because it could break MVU/reactivity).
-   * If this store has a parent store, events from both, parent and child will be observed (merged).
-   *
-   * @param {EventId<T>} identifier - the unique identifier for the event
-   * @returns {Observable<T>} - the behavior observable for the events (piped with delay(1, asyncScheduler) and share())
-   */
-  getEventStream<T>(identifier: EventId<T>): Observable<T> {
-    return merge(
-      this.getEventStreamControlledSubject(identifier).getObservable(),
-      this.parentStore ? this.parentStore.getEventStream(identifier) : NEVER,
-    );
-  }
-
-  /**
-   * Like getEventStream, but receiving TypedEvent<T> instead of T.
-   *
-   * @param {EventId<T>} identifier - the unique identifier for the event
-   * @returns {Observable<TypedEvent<T>>} - the observable for the typed events
-   */
-  getTypedEventStream<T>(identifier: EventId<T>): Observable<TypedEvent<T>> {
-    return merge(
-      this.getEventStreamControlledSubject(identifier)
-        .getObservable()
-        .pipe(
-          map(event => ({
-            type: identifier,
-            event,
-          })),
-        ),
-      this.parentStore ? this.parentStore.getTypedEventStream(identifier) : NEVER,
-    );
-  }
-
-  /**
-   * This method adds an Effect to the store.
-   *
-   * @param {EffectId<InputType, ResultType>} id - the unique identifier for the effect
-   * @param {Effect<InputType, ResultType>} effect - the Effect function
-   * @returns {void}
-   */
-  addEffect<InputType, ResultType>(
-    id: EffectId<InputType, ResultType>,
-    effect: Effect<InputType, ResultType>,
+  #addDerived<T>(
+    id: AnyBehaviorId & WritesAs<T>,
+    source: Observable<T>,
+    initial: Initial<T> | undefined,
   ): void {
-    this.addState(id as unknown as StateId<Effect<InputType, ResultType>>, () => effect);
+    const cell = this.#derivedCell<T>(id);
+    this.#register(() => {
+      cell.setSource(source, initial);
+      return {
+        undo: () => {
+          this.#drop(this.#derived, id, cell);
+        },
+        resets: cell,
+      };
+    });
   }
 
-  /**
-   * This method returns an Observable for the effect specified by identifier.
-   * It does not matter, if the effect has already been added or not.
-   * If it has already been added, a subscriber will get it immediately. Else, a subscriber will
-   * get the effect as soon as it is added to the store.
-   * If this store has a parent store, then as long as no effect is added for the child, the
-   * effect will be received from the parent. As soon, as a corresponding effect is added to the child,
-   * subscribers will receive the effect from the child.
-   *
-   * @param {EffectId<InputType, ResultType>} id - the unique identifier for the effect
-   * @returns {Observable<Effect<InputType, ResultType>>} - the effect observable
-   */
-  getEffect<InputType, ResultType>(
-    id: EffectId<InputType, ResultType>,
-  ): Observable<Effect<InputType, ResultType>> {
-    return this.getBehavior<Effect<InputType, ResultType>>(
-      id as unknown as BehaviorId<Effect<InputType, ResultType>>,
+  #connect<T>(
+    source: Observable<T>,
+    target: WritableBehavior<T> | WritableEvent<T>,
+  ): EventSourceHandle | undefined {
+    if (target.kind === 'event') {
+      return this.#addEventSources([target], () => this.#guard([target], source));
+    }
+    if (target.kind === 'derived') {
+      this.#addDerived(target, source, undefined);
+      return undefined;
+    }
+    const cell = this.#stateCell<T>(target);
+    this.#register(() => {
+      cell.setBase({
+        kind: 'feed',
+        source,
+        onError: cause => {
+          this.#report({ origin: 'state-feed', state: target, cause });
+        },
+      });
+      return {
+        undo: () => {
+          this.#drop(this.#states, target, cell);
+        },
+        resets: cell,
+      };
+    });
+    return undefined;
+  }
+
+  #addEventSources(
+    ids: readonly AnyEventId[],
+    sourceFor: (id: AnyEventId) => Observable<unknown>,
+  ): EventSourceHandle {
+    const handle: EventSourceHandle = Object.freeze({
+      [eventSourceHandle]: ids.map(id => id.name).join(','),
+    });
+    this.#register(() => {
+      ids.forEach(id => {
+        this.#anyEventCell(id).addSource(handle, sourceFor(id));
+      });
+      return {
+        undo: () => {
+          this.removeEventSource(handle);
+        },
+      };
+    });
+    return handle;
+  }
+
+  #guard<T>(ids: readonly AnyEventId[], source: Observable<T>): Observable<T> {
+    return source.pipe(
+      catchError((cause: unknown) => {
+        this.#report({ origin: 'event-source', events: ids, cause });
+        return NEVER;
+      }),
     );
   }
 
-  /**
-   * The isSubscribed method is a convenience method for testing and debugging and should
-   * not serve any purpose in real program logic.
-   *
-   * @param {SignalId<T>} identifier - the unique identifier for the behavior or event
-   * @returns {boolean} - true, if the corresponding event or behavior is currently subscribed
-   */
-  isSubscribed<T>(identifier: SignalId<T>): boolean {
-    const isb = isBehaviorId(identifier);
-    return isb
-      ? this.behaviors.get(identifier)?.isObservableSubscribed() === true
-      : this.eventStreams.get(identifier)?.isObservableSubscribed() === true;
+  #behavior<T>(id: AnyBehaviorId & ReadsAs<T>): Observable<T> {
+    return defer(() =>
+      this.#ownOrParent(
+        id.kind === 'state' ? this.#stateCell<T>(id) : this.#derivedCell<T>(id),
+        parent => parent.#behavior(id),
+      ),
+    );
   }
 
-  /**
-   * The getIsSubscribedObservable method is the reactive counterpart for the isSubscribed method,
-   * also serving mainly for testing and debugging purposes (though in contrast to the non-reactive
-   * counterpart, you could actually use this in some scenarios, but there are likely more idiomatic
-   * ways).
-   *
-   * @param {SignalId<T>} identifier - the unique identifier for the behavior or event
-   * @returns {Observable<boolean>} - upon subscription, lets you keep track whether the corresponding event or behavior is subscribed
-   */
-  getIsSubscribedObservable<T>(identifier: SignalId<T>): Observable<boolean> {
-    const sym = identifier;
-    return isBehaviorId(identifier)
-      ? this.behaviorsSubject.asObservable().pipe(
-          switchMap(s => s.get(sym)?.getIsSubscribedObservable() ?? of(false)),
-          distinctUntilChanged(),
-          share(),
-        )
-      : this.eventStreamsSubject.asObservable().pipe(
-          switchMap(s => s.get(sym)?.getIsSubscribedObservable() ?? of(false)),
-          distinctUntilChanged(),
-          share(),
-        );
+  #eventStream<T>(id: AnyEventId & ReadsAs<T>): Observable<T> {
+    const own = defer(() => this.#eventCell<T>(id).observable);
+    return this.#parent === null
+      ? own
+      : merge(own, this.#parent.#eventStream(id)).pipe(takeUntil(this.#ended));
   }
 
-  /**
-   * The getNumberOfBehaviorSources method returns the number of sources for the specified behavior.
-   * Again, this is mostly for testing and debugging.
-   *
-   * @param {BehaviorId<T>} identifier - the unique identifier for the behavior
-   * @returns {number} - the current number of sources for the specified behavior
-   */
-  getNumberOfBehaviorSources<T>(identifier: BehaviorId<T>): number {
-    return this.getBehaviorControlledSubject(identifier).getNumberOfSources();
-  }
-
-  /**
-   * The getNumberOfEventSources method returns the number of sources for the specified event.
-   * Again, this is mostly for testing and debugging.
-   *
-   * @param {EventId<T>} identifier - the unique identifier for the event
-   * @returns {number} - the current number of sources for the specified event
-   */
-  getNumberOfEventSources<T>(eventIdentifier: EventId<T>): number {
-    return this.getEventStreamControlledSubject(eventIdentifier).getNumberOfSources();
-  }
-
-  /**
-   * This method can be used to link a SignalId with a name.
-   * The corresponding name will then be used in future debug methods to represent
-   * tracked signals.
-   *
-   * @param {SignalId<T>} id - the id that should be linked to a name
-   * @param {string} name - the name linked to the given id
-   * @returns {void}
-   */
-  setIdName<T>(id: SignalId<T>, name: string): void {
-    this.names.set(id, name);
-  }
-
-  /**
-   * Get the name linked to the given SignalId.
-   * If no specific name was linked (via setIdName), the default toString()
-   * representation will be returned.
-   *
-   * @param {SignalId<T>} id - the id you are interested in
-   * @returns {string} - the name linked to the id, or the corresponding toString() result
-   */
-  getIdName<T>(id: SignalId<T>): string {
-    return this.getNameForSymbol(id);
-  }
-
-  private getNameForSymbol(id: symbol): string {
-    return this.names.get(id) ?? id.toString();
-  }
-
-  private getDependentObservable<T>(
-    observable: Observable<T>,
-    subscribeObservableOnlyIfEventIsSubscribed: EventId<any> | null,
+  #ownOrParent<T>(
+    cell: {
+      readonly owned$: Observable<boolean>;
+      readonly value: { readonly observable: Observable<T> };
+    },
+    fromParent: (parent: Store) => Observable<T>,
   ): Observable<T> {
-    if (subscribeObservableOnlyIfEventIsSubscribed === null) {
-      return observable;
-    }
-    return this.getEventStreamControlledSubject(subscribeObservableOnlyIfEventIsSubscribed)
-      .getIsSubscribedObservable()
-      .pipe(switchMap(isSubscribed => (isSubscribed ? observable : NEVER)));
-  }
-
-  private addTypedEventSource<T>(
-    sourceIdentifier: symbol,
-    eventIdentifier: EventId<T>,
-    sharedSource: Observable<TypedEvent<T>>,
-  ): void {
-    const source = sharedSource.pipe(
-      filter(typedEvent => typedEvent.type === eventIdentifier),
-      map(event => event.event),
-    );
-    this.getEventStreamControlledSubject(eventIdentifier).addSource(
-      new SourceObservable<T>(sourceIdentifier, source, true),
+    const parent = this.#parent;
+    if (parent === null) return cell.value.observable;
+    return cell.owned$.pipe(
+      distinctUntilChanged(),
+      switchMap(owned => (owned ? cell.value.observable : fromParent(parent))),
+      distinctUntilChanged(),
+      takeUntil(this.#ended),
     );
   }
 
-  private createBehaviorControlledSubject<T>(identifier: BehaviorId<T>): ControlledSubject<T> {
-    const controlledSubject = new ControlledSubject<T>(
-      identifier,
-      true,
-      (_, error) => {
-        // If the source errors, error for the target.
-        controlledSubject.error(error);
-      },
-      id => {
-        // If a source completes, we remove it from the behavior.
-        // We do not complete the target subject, because more sources might exist
-        // or might be added at a later point of time.
-        controlledSubject.removeSource(id);
-      },
-      this.delayedEventQueue,
-    );
-    this.behaviors.set(identifier, controlledSubject);
-    this.behaviorsSubject.next(this.behaviors);
-    return controlledSubject;
+  #drop(table: Map<object, BehaviorCell>, id: object, cell: BehaviorCell | undefined): void {
+    if (cell === undefined || table.get(id) !== cell) return;
+    cell.dispose();
+    table.delete(id);
   }
 
-  private getBehaviorControlledSubject<T>(identifier: BehaviorId<T>): ControlledSubject<T> {
-    return this.behaviors.get(identifier) ?? this.createBehaviorControlledSubject(identifier);
+  #behaviorCell(id: AnyBehaviorId): BehaviorCell {
+    return id.kind === 'state'
+      ? cellFor(this.#states, id, () => new StateCell<unknown>(id.name))
+      : cellFor(this.#derived, id, () => new DerivedCell<unknown>(id.name));
   }
 
-  private createEventStreamControlledSubject<T>(identifier: EventId<T>): ControlledSubject<T> {
-    const controlledSubject = new ControlledSubject<T>(
-      identifier,
-      false,
-      (_, error) => {
-        // If a source errors, error for the target.
-        controlledSubject.error(error);
-      },
-      id => {
-        // If the source completes, we can remove it.
-        // However, we cannot complete the target, even if it was the last source, because store.dispatch
-        // is also a valid (never completing) source. Also, new sources might be added at a later point of time.
-        controlledSubject.removeSource(id);
-      },
-      this.delayedEventQueue,
-    );
-    this.eventStreams.set(identifier, controlledSubject);
-    this.eventStreamsSubject.next(this.eventStreams);
-    return controlledSubject;
+  #stateCell<T>(id: AnyBehaviorId & Typed<T>): StateCell<T> {
+    return cellFor(this.#states, id, () => new StateCell<T>(id.name));
   }
 
-  private getEventStreamControlledSubject<T>(identifier: EventId<T>): ControlledSubject<T> {
-    return this.eventStreams.get(identifier) ?? this.createEventStreamControlledSubject(identifier);
+  #derivedCell<T>(id: AnyBehaviorId & Typed<T>): DerivedCell<T> {
+    return cellFor(this.#derived, id, () => new DerivedCell<T>(id.name));
   }
 
-  private assertSourceExists(symbol: symbol, sourceIdentifier: symbol): void {
-    if (
-      (this.behaviors.has(symbol) && this.behaviors.get(symbol)?.hasSource(sourceIdentifier)) ||
-      (this.eventStreams.has(symbol) && this.eventStreams.get(symbol)?.hasSource(sourceIdentifier))
-    ) {
-      throw new Error(
-        `A behavior or event source with the given identifier has already been added: ${this.getNameForSymbol(
-          symbol,
-        )}`,
-      );
-    }
+  #effectCell<Input, Result>(id: EffectId<Input, Result>): StateCell<Effect<Input, Result>> {
+    return cellFor(this.#effects, id, () => new StateCell<Effect<Input, Result>>(id.name));
+  }
+
+  #eventCell<T>(id: AnyEventId & Typed<T>): EventCell<T> {
+    return cellFor(this.#events, id, () => new EventCell<T>(this.#queue));
+  }
+
+  #anyEventCell(id: AnyEventId): AnyEventCell {
+    return cellFor(this.#events, id, () => new EventCell<unknown>(this.#queue));
   }
 }

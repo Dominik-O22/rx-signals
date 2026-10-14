@@ -1,7 +1,6 @@
 import { beforeEach, describe, it } from 'vitest';
 import { of } from 'rxjs';
-import { Store } from '../src/store';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { Store, getDerivedId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
 
 describe('Parent store', () => {
@@ -53,19 +52,19 @@ describe('Parent store', () => {
 
   it('should receive events from both, parent and child, in the child', async () => {
     const sequence = expectSequence(childStore.getEventStream(eventId), [1, 2, 1, 2]);
-    childStore.dispatch(eventId, 1);
-    store.dispatch(eventId, 2);
-    childStore.dispatch(eventId, 1);
-    store.dispatch(eventId, 2);
+    void childStore.dispatch(eventId, 1);
+    void store.dispatch(eventId, 2);
+    void childStore.dispatch(eventId, 1);
+    void store.dispatch(eventId, 2);
     await sequence;
   });
 
   it('should receive events only from the parent in parent', async () => {
     const sequence = expectSequence(store.getEventStream(eventId), [2, 2]);
-    childStore.dispatch(eventId, 1);
-    store.dispatch(eventId, 2);
-    childStore.dispatch(eventId, 1);
-    store.dispatch(eventId, 2);
+    void childStore.dispatch(eventId, 1);
+    void store.dispatch(eventId, 2);
+    void childStore.dispatch(eventId, 1);
+    void store.dispatch(eventId, 2);
     await sequence;
   });
 });

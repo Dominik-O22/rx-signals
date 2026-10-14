@@ -1,10 +1,14 @@
 import { config, delay, EMPTY, type Observable, of } from 'rxjs';
 import { describe, expect, it, onTestFinished } from 'vitest';
-import { DelayedEventQueue } from '../src/delayed-event-queue';
-import { type EffectConfiguration, getEffectSignalsFactory } from '../src/effect-signals-factory';
-import { Store } from '../src/store';
-import { getEventId, getStateId } from '../src/store-utils';
-import { getValidatedInputWithResultSignalsFactory } from '../src/validated-input-with-result-signals-factory';
+import { getNumberOfEventSources, settle } from '../src/testing';
+import {
+  type EffectConfiguration,
+  getEffectSignalsFactory,
+  Store,
+  getEventId,
+  getStateId,
+  getValidatedInputWithResultSignalsFactory,
+} from '../src';
 
 // Behaviors that were broken in the published 3.0.0-rc23.
 
@@ -66,13 +70,18 @@ const setupValidatedSave = (validationDelay: number) => {
 };
 
 describe('rc23 bugs', () => {
-  it('completes the delayed event stream once its source completes', async () => {
-    let completed = false;
-    new DelayedEventQueue()
-      .getQueueDelayedObservable(of(1, 2, 3))
-      .subscribe({ complete: () => (completed = true) });
-    await wait(10);
-    expect(completed).toBe(true);
+  // The leak was a per-event subscription inside the queue. The v4 queue holds plain tasks, so the
+  // observable part left is that a completed source is delivered and released.
+  it('releases an event source once it completed and was delivered', async () => {
+    const store = new Store();
+    const event = getEventId<number>();
+    store.addEventSource(event, of(1, 2, 3));
+    const seen: number[] = [];
+    const subscription = store.getEventStream(event).subscribe(value => seen.push(value));
+    await settle(store);
+    subscription.unsubscribe();
+    expect(seen).toEqual([1, 2, 3]);
+    expect(getNumberOfEventSources(store, event)).toBe(0);
   });
 
   it('keeps state alive when a reducer throws', async () => {
@@ -142,15 +151,15 @@ describe('rc23 bugs', () => {
   it('runs a trigger only for the input it was dispatched for', async () => {
     const effect = setupTriggeredEffect({}, 'A', input => of(`${input}_r`));
     await wait(10);
-    effect.store.dispatch(effect.trigger);
+    void effect.store.dispatch(effect.trigger);
     await wait(10);
-    effect.store.dispatch(effect.input.set, 'B');
+    void effect.store.dispatch(effect.input.set, 'B');
     await wait(10);
-    effect.store.dispatch(effect.input.set, 'A');
+    void effect.store.dispatch(effect.input.set, 'A');
     await wait(10);
-    effect.store.dispatch(effect.trigger);
+    void effect.store.dispatch(effect.trigger);
     await wait(10);
-    effect.store.dispatch(effect.input.set, 'B');
+    void effect.store.dispatch(effect.input.set, 'B');
     await wait(20);
     // The second trigger finds A already resolved, and B was never triggered.
     expect(effect.calls).toEqual(['A']);
@@ -159,9 +168,9 @@ describe('rc23 bugs', () => {
   it('re-runs a triggered input on invalidate without a new trigger', async () => {
     const effect = setupTriggeredEffect({}, 'A', input => of(`${input}_r`));
     await wait(10);
-    effect.store.dispatch(effect.trigger);
+    void effect.store.dispatch(effect.trigger);
     await wait(10);
-    effect.store.dispatch(effect.invalidate);
+    void effect.store.dispatch(effect.invalidate);
     await wait(20);
     expect(effect.calls).toEqual(['A', 'A']);
   });
@@ -169,9 +178,9 @@ describe('rc23 bugs', () => {
   it('keeps a trigger dispatched during the debounce window', async () => {
     const effect = setupTriggeredEffect({ effectDebounceTime: 30 }, 'A', input => of(`${input}_r`));
     await wait(50);
-    effect.store.dispatch(effect.input.set, 'B');
+    void effect.store.dispatch(effect.input.set, 'B');
     await wait(5);
-    effect.store.dispatch(effect.trigger);
+    void effect.store.dispatch(effect.trigger);
     await wait(80);
     expect(effect.calls).toEqual(['B']);
   });
@@ -183,9 +192,9 @@ describe('rc23 bugs', () => {
       input => of(`${input.q}_r`).pipe(delay(30)),
     );
     await wait(10);
-    effect.store.dispatch(effect.trigger);
+    void effect.store.dispatch(effect.trigger);
     await wait(10);
-    effect.store.dispatch(effect.input.set, { q: 'x' });
+    void effect.store.dispatch(effect.input.set, { q: 'x' });
     await wait(60);
     expect(effect.latest()?.result).toBe('x_r');
   });
@@ -193,9 +202,9 @@ describe('rc23 bugs', () => {
   it('does not run the result effect while the input is invalid', async () => {
     const form = setupValidatedSave(0);
     await wait(10);
-    form.store.dispatch(form.input.set, 'bad-edit');
+    void form.store.dispatch(form.input.set, 'bad-edit');
     await wait(10);
-    form.save();
+    void form.save();
     await wait(20);
     expect(form.saved).toEqual([]);
   });
@@ -203,9 +212,9 @@ describe('rc23 bugs', () => {
   it('runs a result trigger once the current input is validated', async () => {
     const form = setupValidatedSave(20);
     await wait(30);
-    form.store.dispatch(form.input.set, 'better');
+    void form.store.dispatch(form.input.set, 'better');
     await wait(5);
-    form.save();
+    void form.save();
     await wait(50);
     expect(form.saved).toEqual(['better']);
   });

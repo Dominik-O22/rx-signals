@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { combineLatest, of } from 'rxjs';
 import { debounceTime, filter, map, switchMap } from 'rxjs/operators';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { getDerivedId, getEventId, Store } from '../src';
 import { awaitStringifyEqualState, expectSequence } from './test-utils';
-import { Store } from './../src/store';
+import { isSubscribed } from '../src/testing';
 describe('All lazy query pattern', () => {
   type ResultType = {
-    result: Array<number | string | null>;
+    result: (number | string | null)[];
     resultQuery: string | null;
   };
 
@@ -47,8 +47,8 @@ describe('All lazy query pattern', () => {
   });
 
   it('should not subscribe the effect, if the result is not subscribed', async () => {
-    expect(store.isSubscribed(resultBehavior)).toBe(false);
-    expect(store.isSubscribed(queryBehavior)).toBe(false);
+    expect(isSubscribed(store, resultBehavior)).toBe(false);
+    expect(isSubscribed(store, queryBehavior)).toBe(false);
 
     const dispatchResult = await store.dispatch(queryEvent, 'testQuery');
     expect(dispatchResult).toBe(false);
@@ -65,10 +65,10 @@ describe('All lazy query pattern', () => {
         resultQuery: 'testQuery',
       },
     ]);
-    expect(store.isSubscribed(resultBehavior)).toBe(true);
-    expect(store.isSubscribed(queryBehavior)).toBe(true);
+    expect(isSubscribed(store, resultBehavior)).toBe(true);
+    expect(isSubscribed(store, queryBehavior)).toBe(true);
 
-    store.dispatch(queryEvent, 'testQuery');
+    void store.dispatch(queryEvent, 'testQuery');
     await resultSequence;
   });
 
@@ -81,7 +81,7 @@ describe('All lazy query pattern', () => {
       true,
       false,
     ]);
-    store.dispatch(queryEvent, 'testQuery');
+    void store.dispatch(queryEvent, 'testQuery');
     await loadingSequence2;
   });
 
@@ -96,14 +96,14 @@ describe('All lazy query pattern', () => {
         resultQuery: 'testQuery2',
       },
     ]);
-    expect(store.isSubscribed(resultBehavior)).toBe(true);
-    expect(store.isSubscribed(queryBehavior)).toBe(true);
+    expect(isSubscribed(store, resultBehavior)).toBe(true);
+    expect(isSubscribed(store, queryBehavior)).toBe(true);
 
-    store.dispatch(queryEvent, 'testQuery1'); // debounced => no effect
-    store.dispatch(queryEvent, 'testQuery2');
+    void store.dispatch(queryEvent, 'testQuery1'); // debounced => no effect
+    void store.dispatch(queryEvent, 'testQuery2');
     await resultSequence;
 
-    expect(store.isSubscribed(resultBehavior)).toBe(false);
+    expect(isSubscribed(store, resultBehavior)).toBe(false);
     await store.dispatch(queryEvent, 'testQueryWhileUnsubscribed');
 
     const resultSequence2 = expectSequence(store.getBehavior(resultBehavior), [
@@ -116,7 +116,7 @@ describe('All lazy query pattern', () => {
         resultQuery: 'testQuery3',
       },
     ]);
-    store.dispatch(queryEvent, 'testQuery3');
+    void store.dispatch(queryEvent, 'testQuery3');
 
     await resultSequence2;
   });
@@ -133,7 +133,7 @@ describe('All lazy query pattern', () => {
       },
     ]);
 
-    store.dispatch(queryEvent, 'testQuery');
+    void store.dispatch(queryEvent, 'testQuery');
     await resultSequence;
 
     const resultSequence2 = expectSequence(store.getBehavior(resultBehavior), [
@@ -161,7 +161,7 @@ describe('All lazy query pattern', () => {
       },
     ]);
 
-    store.dispatch(queryEvent, 'testQuery');
+    void store.dispatch(queryEvent, 'testQuery');
     await resultSequence3;
 
     store.resetBehaviors();
@@ -225,7 +225,7 @@ describe('All lazy query pattern', () => {
           pending: false,
         },
       ]);
-      store.dispatch(setQuery, 'test');
+      void store.dispatch(setQuery, 'test');
       await resultSequence;
     });
   });

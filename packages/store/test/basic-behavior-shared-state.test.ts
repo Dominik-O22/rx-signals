@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type Observable } from 'rxjs';
 import { map, withLatestFrom } from 'rxjs/operators';
-import { Store } from '../src/store';
-import { getDerivedId, getEventId } from '../src/store-utils';
+import { Store, getDerivedId, getEventId } from '../src';
 import { expectSequence } from './test-utils';
+import { isSubscribed } from '../src/testing';
 
 describe('shared behavior state', () => {
   let store: Store;
@@ -37,9 +37,9 @@ describe('shared behavior state', () => {
 
   it('should calculate correct values', async () => {
     const sequence = expectSequence(observable, [1, 2, 4, 8]);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence;
     expect(calculationCalled).toBe(3);
   });
@@ -47,15 +47,15 @@ describe('shared behavior state', () => {
   it('should share calculated values', async () => {
     const sequence = expectSequence(observable, [1, 2, 4, 8]);
     const sequence2 = expectSequence(observable, [1, 2, 4, 8]);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence;
     await sequence2;
     expect(calculationCalled).toBe(3);
-    expect(store.isSubscribed(id)).toBe(false);
+    expect(isSubscribed(store, id)).toBe(false);
     const sequence3 = expectSequence(observable, [8, 16]);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence3;
     expect(calculationCalled).toBe(4);
   });
@@ -66,8 +66,8 @@ describe('shared behavior state', () => {
     await store.dispatch(calculateEvent);
     await store.dispatch(calculateEvent);
     const sequence3 = expectSequence(observable, [4, 8]);
-    store.dispatch(calculateEvent);
-    store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
+    void store.dispatch(calculateEvent);
     await sequence;
     await sequence2;
     await sequence3;

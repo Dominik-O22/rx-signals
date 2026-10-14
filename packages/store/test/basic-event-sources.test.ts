@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { interval, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { getEventId } from '../src/store-utils';
-import { awaitError, expectSequence, getSequence } from './test-utils';
-import { Store, type TypedEvent } from './../src/store';
+import { getEventId, type StoreError, Store, type TypedEvent } from '../src';
+import { expectSequence, getSequence } from './test-utils';
+import { getNumberOfEventSources, isSubscribed } from '../src/testing';
 describe('Event streams', () => {
   const testEvent = getEventId<string>();
 
@@ -16,12 +16,12 @@ describe('Event streams', () => {
   describe('without sources', () => {
     it('should have no sources', () => {
       store.getEventStream(testEvent);
-      expect(store.getNumberOfEventSources(testEvent)).toBe(0);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(0);
     });
 
     it('should not be subscribed', () => {
       store.getEventStream(testEvent);
-      expect(store.isSubscribed(testEvent)).toBe(false);
+      expect(isSubscribed(store, testEvent)).toBe(false);
     });
     it('should not dispatch event, if not subscribed', async () => {
       store.getEventStream(testEvent);
@@ -50,8 +50,8 @@ describe('Event streams', () => {
         { type: testEvent, event: 'TEST2' },
       ]);
 
-      store.dispatch(testEvent, 'TEST1');
-      store.dispatch(testEvent, 'TEST2');
+      void store.dispatch(testEvent, 'TEST1');
+      void store.dispatch(testEvent, 'TEST2');
 
       await sequence;
     });
@@ -61,25 +61,25 @@ describe('Event streams', () => {
     it('should add and remove event sources', () => {
       const sourceId1 = store.addEventSource(testEvent, of('event1', 'event2'));
       store.addEventSource(testEvent, of('event3', 'event4'));
-      expect(store.getNumberOfEventSources(testEvent)).toBe(2);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(2);
       store.removeEventSource(sourceId1);
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
     });
 
     it('should not be subscribed', () => {
       store.addEventSource(testEvent, of('event1', 'event2'));
       store.getEventStream(testEvent);
-      expect(store.isSubscribed(testEvent)).toBe(false);
+      expect(isSubscribed(store, testEvent)).toBe(false);
     });
 
     it('should subscribe sources and dispatch events, if subscribed', async () => {
       store.addEventSource(testEvent, of('event1', 'event2'));
       store.addEventSource(testEvent, of('event3', 'event4'));
       const eventStream = store.getEventStream(testEvent);
-      expect(store.isSubscribed(testEvent)).toBe(false);
+      expect(isSubscribed(store, testEvent)).toBe(false);
 
       const sequence = expectSequence(eventStream, ['event1', 'event2', 'event3', 'event4']);
-      expect(store.isSubscribed(testEvent)).toBe(true);
+      expect(isSubscribed(store, testEvent)).toBe(true);
 
       await sequence;
     });
@@ -88,22 +88,26 @@ describe('Event streams', () => {
       store.addEventSource(testEvent, of('event1', 'event2'));
       store.addEventSource(testEvent, of('event3', 'event4'));
       const eventStream = store.getEventStream(testEvent);
-      expect(store.isSubscribed(testEvent)).toBe(false);
-      expect(store.getNumberOfEventSources(testEvent)).toBe(2);
+      expect(isSubscribed(store, testEvent)).toBe(false);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(2);
 
       const sequence = expectSequence(eventStream, ['event1', 'event2']);
-      expect(store.isSubscribed(testEvent)).toBe(true);
+      expect(isSubscribed(store, testEvent)).toBe(true);
 
       await sequence;
-      expect(store.getNumberOfEventSources(testEvent)).toBe(0); // because upon subscription, both sources have dispatched immediately
+      expect(getNumberOfEventSources(store, testEvent)).toBe(0); // because upon subscription, both sources have dispatched immediately
     });
 
-    it('should propagate source errors', async () => {
+    // v4: an erroring event source goes to onError; the stream and its subscribers keep running.
+    it('should report source errors and keep the event stream', async () => {
+      const errors: StoreError[] = [];
+      store = new Store({ onError: error => errors.push(error) });
       store.addEventSource(
         testEvent,
         interval(10).pipe(
           map(val => {
             if (val === 3) {
+              // eslint-disable-next-line @typescript-eslint/only-throw-error -- a non-Error throw must pass through as is
               throw 'ERROR';
             }
             return String(val);
@@ -112,14 +116,14 @@ describe('Event streams', () => {
       );
       const eventStream = store.getEventStream(testEvent);
 
-      const sequence = expectSequence(eventStream, ['0', '1']);
-      const errorSubscription = awaitError(eventStream);
+      const sequence = expectSequence(eventStream, ['0', '1', '2', 'after']);
+      await getSequence(eventStream, 3);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(errors).toEqual([{ origin: 'event-source', events: [testEvent], cause: 'ERROR' }]);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
 
+      await store.dispatch(testEvent, 'after');
       await sequence;
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-
-      await errorSubscription;
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
     });
   });
 
@@ -131,9 +135,8 @@ describe('Event streams', () => {
     const testEvent6 = getEventId<string>();
 
     it('should work with event sources that emit 2 different event types', async () => {
-      store.add2TypedEventSource(
-        testEvent,
-        testEvent2,
+      store.addTypedEventSource(
+        [testEvent, testEvent2],
         of(
           {
             type: testEvent,
@@ -145,8 +148,8 @@ describe('Event streams', () => {
           },
         ),
       );
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent2)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent2)).toBe(1);
 
       const eventStream1 = store.getEventStream(testEvent);
       const eventStream2 = store.getEventStream(testEvent2);
@@ -159,10 +162,8 @@ describe('Event streams', () => {
     });
 
     it('should work with event sources that emit 3 different event types', async () => {
-      store.add3TypedEventSource(
-        testEvent,
-        testEvent2,
-        testEvent3,
+      store.addTypedEventSource(
+        [testEvent, testEvent2, testEvent3],
         of(
           {
             type: testEvent,
@@ -178,9 +179,9 @@ describe('Event streams', () => {
           },
         ),
       );
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent2)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent3)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent2)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent3)).toBe(1);
 
       const eventStream1 = store.getEventStream(testEvent);
       const eventStream2 = store.getEventStream(testEvent2);
@@ -196,20 +197,17 @@ describe('Event streams', () => {
     });
 
     it('should work with event sources that emit 4 different event types', async () => {
-      store.add4TypedEventSource(
-        testEvent,
-        testEvent2,
-        testEvent3,
-        testEvent4,
+      store.addTypedEventSource(
+        [testEvent, testEvent2, testEvent3, testEvent4],
         of({
           type: testEvent4,
           event: 'testEvent4',
         }),
       );
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent2)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent3)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent4)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent2)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent3)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent4)).toBe(1);
 
       const eventStream4 = store.getEventStream(testEvent4);
 
@@ -217,22 +215,18 @@ describe('Event streams', () => {
     });
 
     it('should work with event sources that emit 5 different event types', async () => {
-      store.add5TypedEventSource(
-        testEvent,
-        testEvent2,
-        testEvent3,
-        testEvent4,
-        testEvent5,
+      store.addTypedEventSource(
+        [testEvent, testEvent2, testEvent3, testEvent4, testEvent5],
         of({
           type: testEvent5,
           event: 'testEvent5',
         }),
       );
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent2)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent3)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent4)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent5)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent2)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent3)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent4)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent5)).toBe(1);
 
       const eventStream5 = store.getEventStream(testEvent5);
 
@@ -240,24 +234,19 @@ describe('Event streams', () => {
     });
 
     it('should work with event sources that emit 6 different event types', async () => {
-      store.add6TypedEventSource(
-        testEvent,
-        testEvent2,
-        testEvent3,
-        testEvent4,
-        testEvent5,
-        testEvent6,
+      store.addTypedEventSource(
+        [testEvent, testEvent2, testEvent3, testEvent4, testEvent5, testEvent6],
         of({
           type: testEvent6,
           event: 'testEvent6',
         }),
       );
-      expect(store.getNumberOfEventSources(testEvent)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent2)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent3)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent4)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent5)).toBe(1);
-      expect(store.getNumberOfEventSources(testEvent6)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent2)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent3)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent4)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent5)).toBe(1);
+      expect(getNumberOfEventSources(store, testEvent6)).toBe(1);
 
       const eventStream6 = store.getEventStream(testEvent6);
 
@@ -270,9 +259,8 @@ describe('Event streams', () => {
     const testEvent3 = getEventId<string>();
     const testEvent4 = getEventId<string>();
     it('should NEVER dispatch testEvent2, if testEvent1 is not subscribed', async () => {
-      store.add2TypedEventSource(
-        testEvent,
-        testEvent2,
+      store.addTypedEventSource(
+        [testEvent, testEvent2],
         of(
           {
             type: testEvent,
@@ -283,7 +271,7 @@ describe('Event streams', () => {
             event: 'testEvent2',
           },
         ),
-        testEvent,
+        { onlyWhileSubscribed: testEvent },
       );
 
       const eventStream2 = store.getEventStream(testEvent2);
@@ -293,9 +281,8 @@ describe('Event streams', () => {
     });
 
     it('should dispatch testEvent2, if testEvent1 is subscribed', async () => {
-      store.add2TypedEventSource(
-        testEvent,
-        testEvent2,
+      store.addTypedEventSource(
+        [testEvent, testEvent2],
         of(
           {
             type: testEvent,
@@ -310,7 +297,7 @@ describe('Event streams', () => {
             event: 'testEvent3',
           },
         ),
-        testEvent,
+        { onlyWhileSubscribed: testEvent },
       );
 
       const eventStream2 = store.getEventStream(testEvent2);
@@ -325,13 +312,10 @@ describe('Event streams', () => {
 
     it('should dispatch testEvent1/2/4, only while testEvent3 is subscribed', async () => {
       const source = new Subject<TypedEvent<string>>();
-      store.add4TypedEventSource(
-        testEvent,
-        testEvent2,
-        testEvent3,
-        testEvent4,
+      store.addTypedEventSource(
+        [testEvent, testEvent2, testEvent3, testEvent4],
         source.asObservable(),
-        testEvent3,
+        { onlyWhileSubscribed: testEvent3 },
       );
 
       const eventStream1 = store.getEventStream(testEvent);
@@ -375,6 +359,7 @@ describe('Event streams', () => {
     const eNumberOrString = getEventId<number | string>();
     const eString = getEventId<string>();
     const eArray = getEventId<number[]>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pins that an any event accepts any payload
     const eAny = getEventId<any>();
     const eUndefined = getEventId<undefined>();
     const eNull = getEventId<null>();
@@ -382,56 +367,56 @@ describe('Event streams', () => {
     // const x: number = 42;
     // store.dispatch(x, 5); // error
 
-    store.dispatch(eNumber, 5);
+    void store.dispatch(eNumber, 5);
     // store.dispatch(eNumber, [5]); // error
     // store.dispatch(eNumber, ''); // error
     // store.dispatch(eNumber, null); // error
     // store.dispatch(eNumber, undefined); // error
     // store.dispatch(eNumber); // error
 
-    store.dispatch(eNumberOrNull, 5);
+    void store.dispatch(eNumberOrNull, 5);
     // store.dispatch(eNumberOrNull, [5]); // error
     // store.dispatch(eNumberOrNull, ''); // error
-    store.dispatch(eNumberOrNull, null);
+    void store.dispatch(eNumberOrNull, null);
     // store.dispatch(eNumberOrNull, undefined); // error
     // store.dispatch(eNumberOrNull); // error
 
-    store.dispatch(eNumberOrString, 5);
+    void store.dispatch(eNumberOrString, 5);
     // store.dispatch(eNumberOrString, [5]); // error
-    store.dispatch(eNumberOrString, '');
+    void store.dispatch(eNumberOrString, '');
     // store.dispatch(eNumberOrString, null); // error
     // store.dispatch(eNumberOrString, undefined); // error
     // store.dispatch(eNumberOrString); // error
 
-    store.dispatch(eString, '');
+    void store.dispatch(eString, '');
     // store.dispatch(eString, [5]); // error
     // store.dispatch(eString, 5); // error
     // store.dispatch(eString, null); // error
     // store.dispatch(eString, undefined); // error
     // store.dispatch(eString); // error
 
-    store.dispatch(eArray, [5]);
+    void store.dispatch(eArray, [5]);
     // store.dispatch(eArray, ['5']); // error
     // store.dispatch(eArray, ''); // error
     // store.dispatch(eArray, null); // error
     // store.dispatch(eArray, undefined); // error
     // store.dispatch(eArray); // error
 
-    store.dispatch(eAny, 5);
-    store.dispatch(eAny, [5]);
-    store.dispatch(eAny, '');
-    store.dispatch(eAny, null);
-    store.dispatch(eAny, undefined);
-    store.dispatch(eAny);
+    void store.dispatch(eAny, 5);
+    void store.dispatch(eAny, [5]);
+    void store.dispatch(eAny, '');
+    void store.dispatch(eAny, null);
+    void store.dispatch(eAny, undefined);
+    void store.dispatch(eAny);
 
-    store.dispatch(eUndefined, undefined);
+    void store.dispatch(eUndefined, undefined);
     // store.dispatch(eUndefined, [5]); // error
     // store.dispatch(eUndefined, ''); // error
     // store.dispatch(eUndefined, null); // error
-    store.dispatch(eUndefined, undefined);
-    store.dispatch(eUndefined);
+    void store.dispatch(eUndefined, undefined);
+    void store.dispatch(eUndefined);
 
-    store.dispatch(eNull, null);
+    void store.dispatch(eNull, null);
     // store.dispatch(eNull, [5]); // error
     // store.dispatch(eNull, ''); // error
     // store.dispatch(eNull, undefined); // error
