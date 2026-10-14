@@ -1,0 +1,38 @@
+<section class="kostenstelle-edit">
+  <h2>Kostenstelle bearbeiten</h2>
+  <form (submit)="$event.preventDefault(); load(nummerInput.value)">
+    <input #nummerInput placeholder="KST-0000" />
+    <button type="submit">Laden</button>
+  </form>
+  @if (vm$ | async; as vm) {
+    <label>
+      Nummer
+      <input [value]="vm.currentInput?.nummer ?? ''" (change)="onTextChange('nummer', $any($event.target).value)" />
+      <small class="error">{{ vm.validationResult?.nummer }}</small>
+    </label>
+    <label>
+      Bezeichnung
+      <input [value]="vm.currentInput?.bezeichnung ?? ''" (change)="onTextChange('bezeichnung', $any($event.target).value)" />
+      <small class="error">{{ vm.validationResult?.bezeichnung }}</small>
+    </label>
+    <label>
+      Verantwortlich
+      <input [value]="vm.currentInput?.verantwortlich ?? ''" (change)="onTextChange('verantwortlich', $any($event.target).value)" />
+    </label>
+    <label>
+      Budget
+      <input type="number" [value]="vm.currentInput?.budget ?? 0" (change)="onBudgetChange($any($event.target).value)" />
+      <small class="error">{{ vm.validationResult?.budget }}</small>
+    </label>
+    <p class="status">
+      @if (vm.validationPending) { Pruefe... }
+      @else if (vm.isValid) { Gueltig }
+      @else { Ungueltig }
+      @if (vm.resultPending) { / Speichere... }
+      @if (vm.result; as saved) { / Gespeichert: {{ saved.nummer }} v{{ saved.version }} }
+    </p>
+    <button type="button" class="save" [disabled]="!vm.isValid || vm.validationPending || vm.resultPending" (click)="save()">Speichern</button>
+    <button type="button" (click)="revalidate()">Erneut pruefen</button>
+    <button type="button" (click)="reset()">Verwerfen</button>
+  }
+</section>

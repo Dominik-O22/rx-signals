@@ -1,0 +1,34 @@
+<section class="auswertung">
+  <h2>Auswertung</h2>
+  @if (filter$ | async; as filter) {
+    <form (submit)="$event.preventDefault(); refresh()">
+      <input type="number" [value]="filter.jahr" (change)="onJahrChange($any($event.target).value)" />
+      <input [value]="filter.kostenstelle" (change)="onKostenstelleChange($any($event.target).value)" />
+      <select [value]="filter.sortierung" (change)="onSortierungChange($any($event.target).value)">
+        <option value="konto">Konto</option>
+        <option value="betrag">Betrag</option>
+      </select>
+      <button type="submit">Aktualisieren</button>
+      <button type="button" (click)="resetAndReload()">Zuruecksetzen</button>
+    </form>
+  }
+  @if (vm$ | async; as vm) {
+    <p>
+      {{ vm.summary.filterLabel }}: {{ vm.summary.rowCount }} Zeilen, Summe {{ vm.summary.summe }}
+      @if (vm.summary.stale) { (veraltet) }
+      @if (vm.result.resultPending) { (laedt) }
+    </p>
+    <table>
+      @for (zeile of vm.page.items; track zeile.konto) {
+        <tr>
+          <td>{{ zeile.konto }}</td>
+          <td>{{ zeile.bezeichnung }}</td>
+          <td>{{ zeile.betrag }}</td>
+        </tr>
+      }
+    </table>
+    @for (index of vm.pageIndexes; track index) {
+      <button type="button" [disabled]="index === vm.page.index" (click)="showPage(index)">{{ index + 1 }}</button>
+    }
+  }
+</section>
