@@ -1,0 +1,50 @@
+{
+  "name": "@rx-signals-next/angular",
+  "version": "4.0.0-dev.0",
+  "description": "Angular providers and signal bridge for @rx-signals-next/store",
+  "contributors": [
+    "Dominik Opwis"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dominik-O22/rx-signals.git",
+    "directory": "packages/angular"
+  },
+  "keywords": [
+    "angular",
+    "rx-signals",
+    "rxjs",
+    "store",
+    "state management"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=19.0.0 <23.0.0",
+    "@rx-signals-next/store": "workspace:^",
+    "rxjs": "^7.8.0"
+  },
+  "devDependencies": {
+    "@angular/common": "~19.2.25",
+    "@angular/compiler": "~19.2.25",
+    "@angular/core": "~19.2.25",
+    "@angular/platform-browser": "~19.2.25",
+    "@angular/platform-browser-dynamic": "~19.2.25",
+    "@rx-signals-next/store": "workspace:^",
+    "jsdom": "^30.1.2",
+    "rxjs": "^7.8.2"
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  }
+}
