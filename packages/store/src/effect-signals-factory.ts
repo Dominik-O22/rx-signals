@@ -249,16 +249,17 @@ const getEffectBuilder: EffectSignalsBuild = <IT, RT>(
       result: config.initialResultGetter?.(),
     });
 
-    // In trigger mode: the run the last trigger asked for. A trigger always refers to the
-    // input that is current when it is dispatched, and an input change withdraws it.
-    const triggeredRunId = getDerivedId<Run | null>();
+    // In trigger mode: the input the last trigger was dispatched for (boxed, so a null input
+    // differs from no trigger). An input change withdraws it, an invalidation does not, so
+    // invalidating re-runs a triggered input right away.
+    const triggeredId = getDerivedId<{ input: IT } | null>();
     store.addDerivedState(
-      triggeredRunId,
+      triggeredId,
       config.withTrigger
         ? merge(
             store.getEventStream(inIds.trigger).pipe(
-              withLatestFrom(input$, token$),
-              map(([, input, token]): Run => ({ input, token })),
+              withLatestFrom(input$),
+              map(([, input]) => ({ input })),
             ),
             input$.pipe(
               distinctUntilChanged(effectInputEquals),
@@ -268,7 +269,13 @@ const getEffectBuilder: EffectSignalsBuild = <IT, RT>(
         : NEVER,
       null,
     );
-    const triggeredRun$ = store.getBehavior(triggeredRunId);
+    const triggered$ = store.getBehavior(triggeredId);
+
+    // The run wanted for an input: always without trigger mode, else only if it was triggered.
+    const wantedRun = (input: IT, token: object | null, triggered: { input: IT } | null) =>
+      !config.withTrigger || (triggered !== null && effectInputEquals(triggered.input, input))
+        ? { input, token }
+        : null;
 
     // The run the effect should currently perform, or null if none.
     // Debouncing applies to the input only, so a trigger during the debounce window is kept.
@@ -276,11 +283,8 @@ const getEffectBuilder: EffectSignalsBuild = <IT, RT>(
       config.effectDebounceTime === undefined || config.effectDebounceTime < 1
         ? input$
         : input$.pipe(debounceTime(config.effectDebounceTime));
-    const wantedRun$ = combineLatest([effectInput$, token$, triggeredRun$]).pipe(
-      map(([input, token, triggeredRun]): Run | null => {
-        const run = { input, token };
-        return !config.withTrigger || isSameRun(run, triggeredRun) ? run : null;
-      }),
+    const wantedRun$ = combineLatest([effectInput$, token$, triggered$]).pipe(
+      map(([input, token, triggered]) => wantedRun(input, token, triggered)),
       distinctUntilChanged(isSameRun),
     );
 
@@ -328,19 +332,13 @@ const getEffectBuilder: EffectSignalsBuild = <IT, RT>(
 
     store.addDerivedState(
       outIds.combined,
-      combineLatest([input$, token$, triggeredRun$, store.getBehavior(resultStateId)]).pipe(
-        map(([input, token, triggeredRun, resultState]) => {
-          const currentRun = { input, token };
-          return {
-            currentInput: input,
-            result: resultState.result,
-            resultInput: resultState.run?.input,
-            resultPending: isPending(
-              !config.withTrigger || isSameRun(currentRun, triggeredRun) ? currentRun : null,
-              resultState,
-            ),
-          };
-        }),
+      combineLatest([input$, token$, triggered$, store.getBehavior(resultStateId)]).pipe(
+        map(([input, token, triggered, resultState]) => ({
+          currentInput: input,
+          result: resultState.result,
+          resultInput: resultState.run?.input,
+          resultPending: isPending(wantedRun(input, token, triggered), resultState),
+        })),
       ),
       config.initialResultGetter
         ? {

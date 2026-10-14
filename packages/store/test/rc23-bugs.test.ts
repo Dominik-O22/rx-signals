@@ -35,7 +35,14 @@ const setupTriggeredEffect = <T, R>(
   });
   const results: { result?: R; resultPending: boolean }[] = [];
   store.getBehavior(factory.output.combined).subscribe(value => results.push(value));
-  return { store, input, trigger: factory.input.trigger, calls, latest: () => results.at(-1) };
+  return {
+    store,
+    input,
+    trigger: factory.input.trigger,
+    invalidate: factory.input.invalidate,
+    calls,
+    latest: () => results.at(-1),
+  };
 };
 
 const setupValidatedSave = (validationDelay: number) => {
@@ -147,6 +154,16 @@ describe('rc23 bugs', () => {
     await wait(20);
     // The second trigger finds A already resolved, and B was never triggered.
     expect(effect.calls).toEqual(['A']);
+  });
+
+  it('re-runs a triggered input on invalidate without a new trigger', async () => {
+    const effect = setupTriggeredEffect({}, 'A', input => of(`${input}_r`));
+    await wait(10);
+    effect.store.dispatch(effect.trigger);
+    await wait(10);
+    effect.store.dispatch(effect.invalidate);
+    await wait(20);
+    expect(effect.calls).toEqual(['A', 'A']);
   });
 
   it('keeps a trigger dispatched during the debounce window', async () => {
