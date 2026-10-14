@@ -363,3 +363,5 @@ The repository's fixture app (`fixtures/angular19-rc23`) mirrors the real app's 
 - `selftest/probe.ts`, C4. `keepHot(store, ids: ReadonlyArray<BehaviorId<unknown>>)` received ids of six value types. Fix: `BehaviorId<any>`.
 - `selftest/selftest.service.ts`, C5. `String(e.error?.message ?? e.error)`. Fix: narrow with `instanceof Error`.
 - `features/auswertung/auswertung-signals.factory.ts`, C5. The same pattern in an error notification.
+
+`fixture-hand-edits.patch` holds exactly these edits. `node scripts/fixture-gate.mjs --migrate` runs the script on a copy of the fixture, applies the patch, installs the v4 packages built from this repository, and checks the result against the rc23 baseline.

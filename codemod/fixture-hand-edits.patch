@@ -1,0 +1,52 @@
+diff --git a/src/app/core/notification.service.ts b/src/app/core/notification.service.ts
+index c8ed85b..7a7dfa3 100644
+--- a/src/app/core/notification.service.ts
++++ b/src/app/core/notification.service.ts
+@@ -23,7 +23,7 @@ export class NotificationService {
+     this.emit(notificationDismissed, index);
+   }
+ 
+-  private emit<T>(eventId: EventId<T>, event: T): void {
++  private emit<T>(eventId: EventId<T>, event: NoInfer<T>): void {
+     this.store.dispatch(eventId, event);
+   }
+ }
+diff --git a/src/app/features/auswertung/auswertung-signals.factory.ts b/src/app/features/auswertung/auswertung-signals.factory.ts
+index e183dbb..b05e9e6 100644
+--- a/src/app/features/auswertung/auswertung-signals.factory.ts
++++ b/src/app/features/auswertung/auswertung-signals.factory.ts
+@@ -207,7 +207,7 @@ export const getAuswertungSignalsFactory = (): AuswertungSignalsFactory =>
+         store.getEventStream(output.errors).pipe(
+           map(({ error, errorInput }) => ({
+             kind: 'error' as const,
+-            text: `Auswertung ${filterLabel(errorInput)} fehlgeschlagen: ${String(error?.message ?? error)}`,
++            text: `Auswertung ${filterLabel(errorInput)} fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`,
+           })),
+         ),
+       );
+diff --git a/src/app/selftest/probe.ts b/src/app/selftest/probe.ts
+index 5e3775a..d8dce43 100644
+--- a/src/app/selftest/probe.ts
++++ b/src/app/selftest/probe.ts
+@@ -31,7 +31,7 @@ export const recordEvents = <T>(store: Store, id: EventId<T>, sink: T[]): Subscr
+   store.getEventStream(id).subscribe(event => sink.push(event));
+ 
+ /** Lazy (derived) behaviors only compute while subscribed, so the self-test holds them open. */
+-export const keepHot = (store: Store, ids: ReadonlyArray<BehaviorId<unknown>>): Subscription => {
++export const keepHot = (store: Store, ids: ReadonlyArray<BehaviorId<any>>): Subscription => {
+   const hot = new Subscription();
+   ids.forEach(id => hot.add(store.getBehavior(id).subscribe()));
+   return hot;
+diff --git a/src/app/selftest/selftest.service.ts b/src/app/selftest/selftest.service.ts
+index 85c7405..4280903 100644
+--- a/src/app/selftest/selftest.service.ts
++++ b/src/app/selftest/selftest.service.ts
+@@ -240,7 +240,7 @@ export class SelftestService {
+       staleSummary,
+       afterError,
+       errors: errors.map(e => ({
+-        message: String(e.error?.message ?? e.error),
++        message: e.error instanceof Error ? e.error.message : String(e.error),
+         input: e.errorInput,
+       })),
+       kst200,
