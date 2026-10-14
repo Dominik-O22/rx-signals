@@ -22,10 +22,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      # The angular package resolves the store through its built types.
+      - run: pnpm build
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm build
       - run: pnpm --filter @rx-signals-next/store typecheck:matrix
       - run: node --test codemod/test/
 
