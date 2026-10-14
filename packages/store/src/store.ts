@@ -8,7 +8,9 @@ import {
   NEVER,
   type Observable,
   share,
+  Subject,
   switchMap,
+  takeUntil,
 } from 'rxjs';
 import { type Demand } from './cells/demand';
 import { DerivedCell } from './cells/derived-cell';
@@ -142,6 +144,9 @@ export class Store {
   readonly #effects = new Map<AnyEffectId, BehaviorCell>();
   readonly #events = new Map<AnyEventId, AnyEventCell>();
   #recording: Registration[] | null = null;
+  // Fires on completeAllSignals. A child's streams also read the parent, which keeps running, so
+  // they stop on this instead of on their cells completing.
+  readonly #ended = new Subject<void>();
 
   static {
     internalsOf = store => ({
@@ -275,6 +280,7 @@ export class Store {
       });
       table.clear();
     }
+    this.#ended.next();
   }
 
   /** Back to initial values: every state, effect and derived behavior of this store. */
@@ -487,7 +493,9 @@ export class Store {
 
   #eventStream<T>(id: AnyEventId & ReadsAs<T>): Observable<T> {
     const own = defer(() => this.#eventCell<T>(id).observable);
-    return this.#parent === null ? own : merge(own, this.#parent.#eventStream(id));
+    return this.#parent === null
+      ? own
+      : merge(own, this.#parent.#eventStream(id)).pipe(takeUntil(this.#ended));
   }
 
   #ownOrParent<T>(
@@ -503,6 +511,7 @@ export class Store {
       distinctUntilChanged(),
       switchMap(owned => (owned ? cell.value.observable : fromParent(parent))),
       distinctUntilChanged(),
+      takeUntil(this.#ended),
     );
   }
 

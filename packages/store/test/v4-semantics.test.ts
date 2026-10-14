@@ -160,6 +160,31 @@ describe('first subscriber of a derived behavior', () => {
   });
 });
 
+describe('child stores', () => {
+  it('complete every subscriber when the child ends, also those reading the parent', async () => {
+    const root = new Store();
+    const own = getStateId<string>('own');
+    const inherited = getStateId<number>('inherited');
+    const event = getEventId<number>('event');
+    root.addState(inherited, 1);
+    const child = root.createChildStore();
+    child.addState(own, 'child');
+
+    const completed: string[] = [];
+    const track = (name: string) => ({ complete: () => completed.push(name) });
+    child.getBehavior(own).subscribe(track('own'));
+    child.getBehavior(inherited).subscribe(track('inherited'));
+    child.getEventStream(event).subscribe(track('event'));
+    child.completeAllSignals();
+
+    expect(completed.sort()).toEqual(['event', 'inherited', 'own']);
+    const later: number[] = [];
+    child.getBehavior(inherited).subscribe(collect(later));
+    await settle(root);
+    expect(later).toEqual([1]);
+  });
+});
+
 describe('lifecycles', () => {
   it('own every registration made on the store during the callback, reducers included', async () => {
     const store = new Store();
