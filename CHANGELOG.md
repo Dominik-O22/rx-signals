@@ -1,10 +1,33 @@
 # Changes
 
-## 3.0.0 (WIP)
+## 4.0.0 (unreleased, fork)
 
-### Breaking Changes
+First release of the fork, based on 3.0.0-rc23. [codemod/MIGRATION.md](codemod/MIGRATION.md) lists every change, with a script that applies them.
 
-- TODO (WIP)
+### Fixed (also against rc23)
+
+- One subscription leaked per dispatched event, about 1.9 KB each.
+- A throwing reducer or erroring source killed its state for good.
+- `LifecycleHandle.end()` did nothing after `reset()`.
+- A child store's `addState` did not take over from the parent for existing subscribers.
+- Effect factory: an empty effect stayed pending, a trigger could run a later input, a trigger during debounce was lost, an equal input cancelled a triggered run.
+- Validated input with result: a result trigger while the input was invalid saved the old valid input.
+- Ending a child store left its subscribers open.
+
+### Changed
+
+- New core: one cell per signal, a plain event queue, and a pure effect state machine. `dispatch` never rejects.
+- Ids are frozen `{ kind, name }` objects with exact value types. `AnyBehaviorId` and friends replace `BehaviorId<unknown>`.
+- `addTypedEventSource([ids], source, options)` replaces `add2TypedEventSource` to `add6TypedEventSource`.
+- `compose` shares one config. `nestConfig(key)` gives a side its own config.
+- The `keep` flags of `connect` and `useExistingEffect` are gone. Chain `removeInputId` or `removeEffectId`.
+- `@rx-signals-next/angular` replaces `RxSignalsStoreModule` with `provideRootStore` and `provideChildStore`.
+
+### Removed
+
+- `NO_VALUE`, `isStateId` and the other kind checks, `setIdName`/`getIdName`, `bind`, and helper types such as `MergedConfiguration`. The debug methods moved to `@rx-signals-next/store/testing`.
+
+## 3.0.0 (never released upstream)
 
 # End of 2.x
 

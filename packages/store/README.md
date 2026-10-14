@@ -1,105 +1,67 @@
-# _@rx-signals/store_
+# @rx-signals-next/store
 
-**Reactive state and effects management**
+Reactive state and effects management on RxJS. You describe state as behaviors and changes as events. Effects stay behind ids, so tests can swap them without mocks.
 
-:warning: This documentation is work in progress for the upcoming 3.0.0 version.
-There is however no good reason to use 2.x over 3.0.0-rc23, so please start with the rc-version (3.0.0 will be the first version I'm going to advertise publicly, so it's more like a 1.0 in reality.).
+This is a maintained fork of [`@rx-signals/store`](https://github.com/gneu77/rx-signals) by Gerd Neudert, whose last release was 3.0.0-rc46 in 2023. The fork starts from 3.0.0-rc23 and fixes its bugs. Version 4 has a new core with an API close to rc23's. To migrate an rc23 app, use [the codemod](../../codemod/MIGRATION.md).
 
-3.0.0-rc23 is better than 2.x in any aspect and the code is production-ready.
-It's mainly documentation that needs improvement for a final realease (though 2.x had no documentation at all, apart from doc-strings).
-It is however possible that I will introduce minor breaking changes until 3.0.0 is finally released.
+## Install
 
-## Installation
+```sh
+npm install @rx-signals-next/store rxjs
+```
 
-**`npm install --save @rx-signals/store@3.0.0-rc23`**
+The only peer dependency is `rxjs` 7.8 or newer. The typings work with TypeScript 5.5 and newer.
 
-## Dependencies
+## A first store
 
-**_RxJs_** is the one and only peer dependency. You need a version >6.4.0 (so 7.x is also perfectly fine) in your project.
+```ts
+import { map } from 'rxjs';
+import { getDerivedId, getEventId, getStateId, Store } from '@rx-signals-next/store';
+
+const counter = getStateId<number>('counter');
+const add = getEventId<number>('add');
+const doubled = getDerivedId<number>('doubled');
+
+const store = new Store();
+store.addState(counter, 0);
+store.addReducer(counter, add, (value, delta) => value + delta);
+store.addDerivedState(doubled, store.getBehavior(counter).pipe(map(value => value * 2)));
+
+store.getBehavior(doubled).subscribe(console.log); // 0, then 6
+await store.dispatch(add, 3);
+```
+
+- **State** (`addState` plus `addReducer`) is eager. Reducers run even while nobody subscribes.
+- **Derived state** (`addDerivedState`) is lazy. Its source runs only while something subscribes, and the last value stays cached.
+- **Events** are delivered asynchronously, in dispatch order, across a store and its child stores. `dispatch` resolves after delivery and never rejects.
+- **Effects** live under an `EffectId`. `getEffectSignalsFactory` turns one into input, result and pending state, with optional trigger, debounce and invalidation.
+
+## Errors
+
+A reducer that throws keeps the previous state. The same goes for a state source or an event source that errors. The store reports the error to `onError`:
+
+```ts
+const store = new Store({ onError: error => log(error.origin, error.cause) });
+```
+
+Without `onError`, errors go to rxjs `config.onUnhandledError`, or are rethrown asynchronously the way rxjs reports unhandled errors. A derived state whose source errors passes the error to its current subscribers, keeps its last value, and retries on the next subscription.
+
+## Ids
+
+Ids are frozen objects with a `kind` and a `name`, and their value types are exact: an `EventId<'a'>` is not an `EventId<string>`. To accept any id of one kind, for example in a helper that subscribes to several behaviors, use `AnyBehaviorId`, `AnyEventId` and friends. `getBehavior` and `getEventStream` accept them and return `Observable<unknown>`.
+
+## Testing helpers
+
+`@rx-signals-next/store/testing` has `settle(store)`, which resolves once the event queue is empty, plus inspection functions such as `isSubscribed(store, id)`.
+
+## Angular
+
+Use [`@rx-signals-next/angular`](../angular/README.md) for `provideRootStore`, `provideChildStore` and `injectBehavior`.
+
+## Learn more
+
+[The tutorial](../../docs/rx-signals_start.md) explains the concepts. It was written for rc23, but the concepts and most code still apply. [MIGRATION.md](../../codemod/MIGRATION.md) lists every API change since rc23.
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
-
-## What is it?
-
-_rx-signals_ is a library for the MVU (**M**odel-**V**iew-**U**pdate) pattern.
-
-It is however not limited to MVU, but can be used in all architectures that would benefit from its features:
-
-- State Management
-  - Global and/or local
-- Reactive Programming
-  - High-level abstractions over _RxJs_ (you can still go as low as you want)
-- Effects Management
-  - Clean side-effect isolation
-  - Mock-less testing of your application logic
-- An alternative to _Redux_, _NgRx_ or other MVU-libs
-  - Less boilerplate / More DRY
-  - More abstractions / Better reusability
-
-Though it heavily relies on _RxJs_, this lib is **not** Angular-specific. You can (and should) also use it in any other context where you have _RxJs_ at your disposal!
-
-(Use it in the backend or with any presentation-framework you like. Decoupling application-logic from presentation-logic is a strength of this library.)
-
-_rx-signals_ itself is implemented with TypeScript and therefore naturally comes with **first-class type-safety**.
-
-### High-level overview
-
-This lib comes with a
-
-- Store for
-  - State-management based on the RP (reactive programming) concepts of events and behaviors (generalized as signals)
-  - Reactive dependency injection
-- Signals- and SignalsBuilder Types as
-  - Encapsulation/Abstraction-layer over low-level signal-composition
-- SignalsFactory as
-  - Abstraction-layer over the SignalsBuilder-type for high-level composition and reusability (enabling DRY architecture)
-- EffectSignalsFactory as
-  - SignalsFactory that covers side-effect-scenarios generically, encapsulating and abstracting away all the pitfalls and possibilities to shoot yourself in the foot.
-
-See [**_rx-signals_ design goals**](https://github.com/gneu77/rx-signals/blob/master/docs/rx-signals_start.md#design) for more.
-
-## Getting started
-
-### Terminology <a name="terminology"></a>
-
-What does _rx-signals_ mean anyway?
-Well the _rx_ stands for reactive extensions, so it's the same _rx_ as in _RxJs_.
-The term _signals_ is lent from the world of functional reactive programming (FRP), that knows two types of signals.
-The first type are _Events_ being a signal of values occurring at discrete points of time.
-The second type of _signals_ are _Behaviors_ that represent values that vary over time in response to _Events_.
-
-In RP (Reactive Programming), we can defined _Events_ and _Behaviors_ as follows:<a name="rp-signals-definition"></a>
-
-- Event-streams:
-  - Value-streams that have no current value
-  - Publish values (events) to subscribers at discrete points of time
-  - Can depend on other event-streams and/or behaviors
-- Behaviors:
-  - Value-Streams that always have a current value (though possibly lazy)
-  - Current value can change at discrete points in time (published to subscribers)
-  - Can depend on other behaviors and/or event-streams
-
-So an _RxJs_ example for behaviors would be a _BehaviorSubject_, while an example for event-streams would be a _Subject_.
-Thus, in _RxJs_-world you can translate _signal_ as _observable_.
-
-### Directions <a name="directions"></a>
-
-You should start with my introduction to [MVU, State Management, Reactive Programming and Effects Management](https://github.com/gneu77/rx-signals/blob/master/docs/rp_state_effects_start.md), if
-
-- you don't know what any of these terms mean
-- you like to understand the basis for the _rx-signals_ architecture
-- you think State Management is only about having a global state and how to modify it
-- you think you're doing RP, just because you're using something like _RxJs_
-- you think Effects Management is only about managing async processes (like http calls)
-- you don't know that all these things are tied together
-
-Otherwise, you may start with [**Using _rx-signals_**](https://github.com/gneu77/rx-signals/blob/master/docs/rx-signals_start.md).
-Where necessary, it will still link to the corresponding passages of the formerly mentioned introduction.
-
-The full API-documentation (as generated from the doc strings) [can be found here](https://rawcdn.githack.com/gneu77/rx-signals/master/docs/tsdoc/index.html)
-
-If you want to use this library in an Angular project, I suggest using the [@rx-signals/angular-provider](https://github.com/gneu77/rx-signals-angular-provider/tree/master/projects/rx-signals/angular-provider) in addition.
-
-An introduction for people with _NgRx_ background [can be found here](https://github.com/gneu77/rx-signals/blob/master/docs/ngrx_compare_start.md)
+MIT. Copyright 2020 Gerd Neudert, 2026 Dominik Opwis.
