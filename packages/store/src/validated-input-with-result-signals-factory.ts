@@ -1,5 +1,14 @@
-import { combineLatest } from 'rxjs';
-import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
+import {
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  map,
+  startWith,
+  switchMap,
+  take,
+  takeWhile,
+  withLatestFrom,
+} from 'rxjs';
 import {
   type CombinedEffectResult,
   type EffectError,
@@ -15,6 +24,7 @@ import {
   type EffectId,
   type EventId,
   getDerivedId,
+  getEventId,
 } from './store-utils';
 import { type Merged } from './type-utils';
 
@@ -196,14 +206,35 @@ export const getValidatedInputWithResultSignalsFactory = <
         nameExtension: `${config.nameExtension ?? ''}_result`,
       },
     }))
+    .addInputId('resultTrigger', config =>
+      getEventId<undefined>(`${config.nameExtension ?? ''}_resultTrigger`),
+    )
     .extendSetup((store, inIds, outIds, config) => {
+      const isValidationResultValid =
+        config.isValidationResultValid ?? (validationResult => validationResult === null);
       store.connectObservable(
-        resultInputGetter(
-          store,
-          outIds.conflicts1.combined,
-          config.isValidationResultValid ?? (validationResult => validationResult === null),
-        ),
+        resultInputGetter(store, outIds.conflicts1.combined, isValidationResultValid),
         inIds.conflicts2.input,
+      );
+      // The result effect only ever sees the last valid input. Forwarding a trigger right away
+      // would run it for that stale input while the current one is invalid or not yet validated.
+      // So a trigger waits for the current input's validation, is dropped if the input changes
+      // first, and only reaches the result effect if the input turned out valid.
+      const validation = store.getBehavior(outIds.conflicts1.combined);
+      store.connectObservable(
+        store.getEventStream(inIds.resultTrigger).pipe(
+          withLatestFrom(validation),
+          switchMap(([, atTrigger]) =>
+            validation.pipe(
+              takeWhile(v => v.currentInput === atTrigger.currentInput),
+              filter(v => !v.resultPending && v.resultInput === v.currentInput),
+              take(1),
+            ),
+          ),
+          filter(v => v.result !== undefined && isValidationResultValid(v.result)),
+          map(() => undefined),
+        ),
+        inIds.conflicts2.trigger,
       );
     })
     .addOutputId('combined', config =>
@@ -224,7 +255,7 @@ export const getValidatedInputWithResultSignalsFactory = <
       input: input.conflicts1.input,
       validationInvalidate: input.conflicts1.invalidate,
       resultInvalidate: input.conflicts2.invalidate,
-      resultTrigger: input.conflicts2.trigger,
+      resultTrigger: input.resultTrigger,
     }))
     .mapOutput(output => ({
       combined: output.combined,
