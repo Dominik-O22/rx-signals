@@ -1,5 +1,5 @@
-import { delay, EMPTY, type Observable, of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { config, delay, EMPTY, type Observable, of } from 'rxjs';
+import { describe, expect, it, onTestFinished } from 'vitest';
 import { DelayedEventQueue } from '../src/delayed-event-queue';
 import { type EffectConfiguration, getEffectSignalsFactory } from '../src/effect-signals-factory';
 import { Store } from '../src/store';
@@ -79,13 +79,17 @@ describe('rc23 bugs', () => {
     });
     const seen: number[] = [];
     store.getBehavior(state).subscribe(value => seen.push(value));
-    const reported = new Promise(resolve => process.once('uncaughtException', resolve));
+    const reported: unknown[] = [];
+    config.onUnhandledError = error => reported.push(error);
+    onTestFinished(() => {
+      config.onUnhandledError = null;
+    });
     await store.dispatch(add, 1);
     await store.dispatch(add, -1);
     await store.dispatch(add, 2);
     await wait(10);
     expect(seen).toEqual([0, 1, 3]);
-    expect(await reported).toEqual(new Error('negative'));
+    expect(reported).toEqual([new Error('negative')]);
   });
 
   it('ends a lifecycle after it was reset', async () => {
