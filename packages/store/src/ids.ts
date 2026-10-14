@@ -56,12 +56,14 @@ export type EffectId<in out Input, in out Result> = {
 export type BehaviorId<T> = StateId<T> | DerivedId<T>;
 export type SignalId<T> = BehaviorId<T> | EventId<T>;
 
-// Ids are invariant, so there is no `SignalId<unknown>` supertype. Constraints use these instead.
-export type AnyStateId = IdBase<'state'>;
-export type AnyBehaviorId = IdBase<'state' | 'derived'>;
-export type AnyEventId = IdBase<'event'>;
-export type AnySignalId = IdBase<'state' | 'derived' | 'event'>;
-export type AnyEffectId = IdBase<'effect'>;
+// Ids are invariant, so there is no `SignalId<unknown>` supertype. Constraints use these instead:
+// any id of the kind, readable as `unknown`, and still not forgeable by an object literal.
+type AnyId<K extends IdKind> = IdBase<K> & ReadsAs<unknown>;
+export type AnyStateId = AnyId<'state'>;
+export type AnyBehaviorId = AnyId<'state' | 'derived'>;
+export type AnyEventId = AnyId<'event'>;
+export type AnySignalId = AnyId<'state' | 'derived' | 'event'>;
+export type AnyEffectId = AnyId<'effect'>;
 
 /** Covariant view: an id you can read a `T` from. `connect` sources use it. */
 export type ReadsAs<T> = { readonly [valueType]: ValueSlot<T, never> };
@@ -101,3 +103,11 @@ export const getDerivedId = <T>(nameExtension?: string): DerivedId<T> =>
 export const getEventId = <T>(nameExtension?: string): EventId<T> => mint('event', nameExtension);
 export const getEffectId = <Input, Result>(nameExtension?: string): EffectId<Input, Result> =>
   mint('effect', nameExtension);
+
+const isIdOf =
+  <K extends IdKind>(kinds: readonly K[]) =>
+  (value: object): value is AnyId<K> =>
+    valueType in value && 'kind' in value && kinds.some(kind => kind === value.kind);
+
+export const isSignalId = isIdOf(['state', 'derived', 'event']);
+export const isEffectId = isIdOf(['effect']);

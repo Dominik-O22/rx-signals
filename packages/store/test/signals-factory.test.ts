@@ -1,10 +1,15 @@
 import { beforeEach, describe, it } from 'vitest';
 import { combineLatest, of } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { Store } from '../src/store';
+import {
+  Store,
+  SignalsFactory,
+  type DerivedId,
+  type EventId,
+  getDerivedId,
+  getEventId,
+} from '../src';
 import { expectSequence } from './test-utils';
-import { SignalsFactory } from './../src/signals-factory';
-import { type DerivedId, type EventId, getDerivedId, getEventId } from './../src/store-utils';
 
 describe('SignalsFactory', () => {
   const operationAdd = 'add';
@@ -188,9 +193,10 @@ describe('SignalsFactory', () => {
       const myEvent = getEventId<number>();
       // const myEvent2 = getEventId<number | null>();
       const signals = baseFactory
-        .connectObservable(st => st.getEventStream(myEvent), 'inputC', false) // no problem, because number is assignable to number | null
-        // .connectObservable(st => st.getEventStream(myEvent2), 'inputB', false) // compiler must error that null is not assignable to number
-        // .connectObservable(st => st.getEventStream(myEvent), 'inputD', false) // compiler must error that number is not assignable to string
+        .connectObservable(st => st.getEventStream(myEvent), 'inputC')
+        .removeInputId('inputC') // no problem, because number is assignable to number | null
+        // .connectObservable(st => st.getEventStream(myEvent2), 'inputB').removeInputId('inputB') // compiler must error that null is not assignable to number
+        // .connectObservable(st => st.getEventStream(myEvent), 'inputD').removeInputId('inputD') // compiler must error that number is not assignable to string
         .build({});
       signals.setup(store);
       const sequence = expectSequence(store.getBehavior(signals.output.outputC), [5, 7]);
@@ -201,28 +207,30 @@ describe('SignalsFactory', () => {
 
     it('should connectId, also if source-value-type only extends target-value-type', () => {
       baseFactory
-        .connectId(getEventId<string>(), 'inputD', true) // no problem, because value-types match exactly
-        .connectId(getEventId<number>(), 'inputC', true) // no problem, because number is assignable to number | null
-        // .connectId(getEventId<number | null>(), 'inputB', true) // compiler must error that null is not assignable to number
-        // .connectId(getEventId<number | null>(), 'inputD', true) // compiler must error that number is not assignable to string
+        .connectId(getEventId<string>(), 'inputD') // no problem, because value-types match exactly
+        .connectId(getEventId<number>(), 'inputC') // no problem, because number is assignable to number | null
+        // .connectId(getEventId<number | null>(), 'inputB') // compiler must error that null is not assignable to number
+        // .connectId(getEventId<number | null>(), 'inputD') // compiler must error that number is not assignable to string
         .build({});
     });
 
     it('should connect, also if source-value-type only extends target-value-type', () => {
       baseFactory
-        .connect('outputD', 'inputD', true) // no problem, because value-types match exactly
-        .connect('result', 'inputC', true) // no problem, because number is assignable to number | null
-        // .connect('outputC', 'inputB', true) // compiler must error that '"outputC"' is not assignable to parameter of type '"result"'
-        // .connect('outputC', 'inputD', true) // compiler must error that '"outputC"' is not assignable to parameter of type '"outputD"'
+        .connect('outputD', 'inputD') // no problem, because value-types match exactly
+        .connect('result', 'inputC') // no problem, because number is assignable to number | null
+        // .connect('outputC', 'inputB') // compiler must error that '"outputC"' is not assignable to parameter of type '"result"'
+        // .connect('outputC', 'inputD') // compiler must error that '"outputC"' is not assignable to parameter of type '"outputD"'
         .build({});
     });
 
     it('should compose and connect output to input', async () => {
       const signals = baseFactory
         .compose(tripledFactory)
-        .connect('result', 'tripleInput', false)
-        // .connect('result', 'someNotUsedFakeInput', false) // here the compiler should complain!
-        .connect('result', 'someOtherNotUsedFakeInput', false) // does nothing, but must be OK for the compiler
+        .connect('result', 'tripleInput')
+        .removeInputId('tripleInput')
+        // .connect('result', 'someNotUsedFakeInput').removeInputId('someNotUsedFakeInput') // here the compiler should complain!
+        .connect('result', 'someOtherNotUsedFakeInput')
+        .removeInputId('someOtherNotUsedFakeInput') // does nothing, but must be OK for the compiler
         .build({});
       signals.setup(store);
       const sequence = expectSequence(store.getBehavior(signals.output.tripledResult), [15, 21, 9]);

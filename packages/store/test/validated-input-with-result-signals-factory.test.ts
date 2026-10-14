@@ -1,17 +1,19 @@
 import { beforeEach, describe, it } from 'vitest';
 import { type Observable, of, Subject } from 'rxjs';
 import { delay } from 'rxjs/operators';
-import { type Signals } from '../src/signals-factory';
-import { type Effect, Store } from '../src/store';
-import { expectSequence, withSubscription } from './test-utils';
-import { getEffectId, getStateId } from './../src/store-utils';
 import {
+  type Signals,
+  type Effect,
+  Store,
+  getEffectId,
+  getStateId,
   getValidatedInputWithResultSignalsFactory,
   type ValidatedInputWithResult,
   type ValidatedInputWithResultFactory,
   type ValidatedInputWithResultInput,
   type ValidatedInputWithResultOutput,
-} from './../src/validated-input-with-result-signals-factory';
+} from '../src';
+import { expectSequence, withSubscription } from './test-utils';
 
 describe('validated input with result signals factory', () => {
   type InputModel = {
@@ -76,8 +78,8 @@ describe('validated input with result signals factory', () => {
         .extendSetup((store, inIds) => {
           store.connect(inputStateId, inIds.input);
         })
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         nameExtension: 'test',
       });
@@ -189,8 +191,8 @@ describe('validated input with result signals factory', () => {
         ResultModel
       >()
         .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       signals = factory.build({
         withResultTrigger: true,
       });
@@ -435,8 +437,8 @@ describe('validated input with result signals factory', () => {
         ResultModel
       >()
         .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         initialResultGetter: () => ({
           results: [],
@@ -522,8 +524,8 @@ describe('validated input with result signals factory', () => {
         ResultModel
       >()
         .extendSetup((store, inIds) => store.connect(inputStateId, inIds.input))
-        .useExistingEffect('validation', () => validationEffectId, true)
-        .useExistingEffect('result', () => resultEffectId, true);
+        .useExistingEffect('validation', () => validationEffectId)
+        .useExistingEffect('result', () => resultEffectId);
       const signals = factory.build({
         resultEffectInputEquals: (a, b) => a.searchString === b.searchString,
       });

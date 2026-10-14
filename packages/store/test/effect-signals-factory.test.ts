@@ -7,11 +7,13 @@ import {
   type EffectOutputSignals,
   type EffectSignalsFactory,
   getEffectSignalsFactory,
-} from '../src/effect-signals-factory';
-import { type Effect, Store } from '../src/store';
-import { getStateId } from '../src/store-utils';
+  type Effect,
+  Store,
+  getStateId,
+  getEffectId,
+} from '../src';
 import { expectSequence, withSubscription } from './test-utils';
-import { getEffectId } from './../src/store-utils';
+import { isSubscribed } from '../src/testing';
 
 describe('effect signals factory', () => {
   type InputModel = {
@@ -71,7 +73,6 @@ describe('effect signals factory', () => {
       factory = getEffectSignalsFactory<InputModel, ResultModel>().useExistingEffect(
         'id',
         () => resultEffectId,
-        true,
       );
     });
 
@@ -287,7 +288,7 @@ describe('effect signals factory', () => {
             },
           },
         ]);
-        expect(store.isSubscribed(outIds.combined)).toBe(false);
+        expect(isSubscribed(store, outIds.combined)).toBe(false);
         inputSubject.next({
           searchString: 'throw',
           page: 2,
@@ -337,7 +338,7 @@ describe('effect signals factory', () => {
             },
           },
         ]);
-        expect(store.isSubscribed(outIds.combined)).toBe(false);
+        expect(isSubscribed(store, outIds.combined)).toBe(false);
         inputSubject.next({
           searchString: 'test',
           page: 2,

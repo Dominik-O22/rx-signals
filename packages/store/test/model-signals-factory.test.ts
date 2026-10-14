@@ -1,11 +1,11 @@
 import { beforeEach, describe, it } from 'vitest';
-import { Store } from '../src/store';
-import { expectSequence } from './test-utils';
 import {
+  Store,
   getModelSignalsFactory,
   type ModelInputSignals,
   type ModelOutputSignals,
-} from './../src/model-signals-factory';
+} from '../src';
+import { expectSequence } from './test-utils';
 
 describe('ModelSignalsFactory', () => {
   type ModelType = {

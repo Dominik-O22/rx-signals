@@ -1,11 +1,16 @@
 import { beforeEach, describe, it } from 'vitest';
 import { combineLatest, map, of } from 'rxjs';
 import { distinctUntilChanged } from 'rxjs/operators';
-import { getEffectSignalsFactory } from '../src/effect-signals-factory';
-import { Store } from '../src/store';
-import { type BehaviorId, type EventId, getEventId, getStateId } from '../src/store-utils';
+import {
+  getEffectSignalsFactory,
+  Store,
+  type BehaviorId,
+  type EventId,
+  getEventId,
+  getStateId,
+  SignalsFactory,
+} from '../src';
 import { expectSequence } from './test-utils';
-import { SignalsFactory } from './../src/signals-factory';
 
 describe('testing documentation', () => {
   let store: Store;
@@ -55,8 +60,8 @@ describe('testing documentation', () => {
       (store, output) =>
         combineLatest([store.getBehavior(output.from), store.getBehavior(output.to)]),
       'input',
-      false,
     )
+    .removeInputId('input')
     .mapInput(input => ({
       incFrom: input.conflicts1.inc,
       decFrom: input.conflicts1.dec,

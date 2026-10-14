@@ -21,7 +21,6 @@ import {
   type AnyEffectId,
   type AnyEventId,
   type AnyStateId,
-  type BehaviorId,
   type DerivedId,
   type EffectId,
   type EventId,
@@ -253,7 +252,7 @@ export class Store {
    * The current value on subscribe once there is one, then every distinct change. Subscribing a
    * derived behavior connects its source; the latest value survives zero subscribers.
    */
-  getBehavior<T>(id: BehaviorId<T>): Observable<T> {
+  getBehavior<T>(id: AnyBehaviorId & ReadsAs<T>): Observable<T> {
     return this.#behavior(id);
   }
 
@@ -298,7 +297,7 @@ export class Store {
   }
 
   /** Always asynchronous. In a child store, this merges the parent's stream with the child's. */
-  getEventStream<T>(id: EventId<T>): Observable<T> {
+  getEventStream<T>(id: AnyEventId & ReadsAs<T>): Observable<T> {
     return this.#eventStream(id);
   }
 

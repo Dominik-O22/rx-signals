@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { combineLatest, merge, of } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { type Effect, Store } from '../src/store';
-import { expectSequence } from './test-utils';
-import { getEffectSignalsFactory } from './../src/effect-signals-factory';
-import { type Signals, SignalsFactory } from './../src/signals-factory';
 import {
+  type Effect,
+  Store,
+  getEffectSignalsFactory,
+  type Signals,
+  SignalsFactory,
   type BehaviorId,
   type DerivedId,
   type EventId,
   getDerivedId,
   getEventId,
   getStateId,
-} from './../src/store-utils';
+} from '../src';
+import { expectSequence } from './test-utils';
 
 describe('signals factories documentation', () => {
   let store: Store;
@@ -241,8 +243,8 @@ describe('signals factories documentation', () => {
           .connectObservable(
             (store, output) => store.getBehavior(output.conflicts2.counter),
             'inputB',
-            false,
           )
+          .removeInputId('inputB')
           .mapInput(ids => ({
             inputA: ids.conflicts1,
             inputB: ids.conflicts2,
@@ -414,8 +416,12 @@ describe('signals factories documentation', () => {
     };
     const getQueryWithResultFactory = <FilterType, ResultType>() =>
       getFilteredSortedPagedQuerySignalsFactory<FilterType>()
+        .nestConfig('c1')
         .compose(
-          getEffectSignalsFactory<[FilterType, SortParameter, PagingParameter], ResultType>(),
+          getEffectSignalsFactory<
+            [FilterType, SortParameter, PagingParameter],
+            ResultType
+          >().nestConfig('c2'),
         )
         .connectObservable(
           (store, output) =>
@@ -425,8 +431,8 @@ describe('signals factories documentation', () => {
               store.getBehavior(output.paging),
             ]),
           'input',
-          false,
         )
+        .removeInputId('input')
         .mapConfig((config: QueryWithResultConfig<FilterType>) => ({
           c1: {
             defaultModel: config.defaultFilter,
@@ -446,7 +452,7 @@ describe('signals factories documentation', () => {
       });
       store.addEffect(mySignals.effects.id, effectMock);
 
-      expect(mySignals.output.model.toString().startsWith('Symbol(S')).toBe(true);
+      expect(mySignals.output.model.kind).toBe('state');
     });
   });
 });
