@@ -22,12 +22,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm --filter @rx-signals-next/store typecheck:matrix
+      - run: node --test codemod/test/
 
   fixture:
-    # The rc23 Angular fixture app must still pass on the packages from this commit.
+    # The codemod must migrate the rc23 Angular fixture app to the packages from this commit,
+    # leave nothing marked but the recorded hand edits, and keep its behavior identical to rc23.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,6 +43,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node scripts/fixture-gate.mjs
+      - run: node scripts/fixture-gate.mjs --migrate
         env:
           CHROME_BIN: /usr/bin/google-chrome

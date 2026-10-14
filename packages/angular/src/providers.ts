@@ -33,7 +33,9 @@ const ROOT_STORE = new InjectionToken<RootStore>('rx-signals root store', {
       // Flush inside the zone even if the batch started outside it, so change detection runs
       // afterwards. Zoneless apps get NoopNgZone, whose run is a plain call.
       schedule: flush => {
-        setTimeout(() => zone.run(flush));
+        setTimeout(() => {
+          zone.run(flush);
+        });
       },
     });
     inject(DestroyRef).onDestroy(() => {

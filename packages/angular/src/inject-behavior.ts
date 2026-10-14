@@ -16,14 +16,10 @@ export function injectBehavior<T>(
   id: AnyBehaviorId & ReadsAs<T>,
   options?: InjectBehaviorOptions,
 ): Signal<T | undefined>;
+/** With `initialValue`, the signal starts there. With `requireSync: true`, it throws if the behavior has no value yet. */
 export function injectBehavior<T>(
   id: AnyBehaviorId & ReadsAs<T>,
-  options: InjectBehaviorOptions & { readonly initialValue: T },
-): Signal<T>;
-/** Throws if the behavior has no value yet when the signal is created. */
-export function injectBehavior<T>(
-  id: AnyBehaviorId & ReadsAs<T>,
-  options: InjectBehaviorOptions & { readonly requireSync: true },
+  options: InjectBehaviorOptions & ({ readonly initialValue: T } | { readonly requireSync: true }),
 ): Signal<T>;
 export function injectBehavior<T>(
   id: AnyBehaviorId & ReadsAs<T>,
