@@ -38,6 +38,26 @@ const setupTriggeredEffect = <T, R>(
   return { store, input, trigger: factory.input.trigger, calls, latest: () => results.at(-1) };
 };
 
+const setupValidatedSave = (validationDelay: number) => {
+  const store = new Store();
+  const input = addInputState(store, 'good');
+  const factory = getValidatedInputWithResultSignalsFactory<string, string | null, string>().build({
+    withResultTrigger: true,
+  });
+  factory.setup(store);
+  store.connect(input.id, factory.input.input);
+  const saved: string[] = [];
+  store.addEffect(factory.effects.validation, (value: string) =>
+    of(value.startsWith('bad') ? 'invalid' : null).pipe(delay(validationDelay)),
+  );
+  store.addEffect(factory.effects.result, (value: string) => {
+    saved.push(value);
+    return of(`${value}_saved`);
+  });
+  store.getBehavior(factory.output.combined).subscribe();
+  return { store, input, saved, save: () => store.dispatch(factory.input.resultTrigger) };
+};
+
 describe('rc23 bugs', () => {
   it('completes the delayed event stream once its source completes', async () => {
     let completed = false;
@@ -102,6 +122,8 @@ describe('rc23 bugs', () => {
     await wait(10);
     expect(effect.latest()).toEqual({
       currentInput: 'A',
+      result: undefined,
+      resultInput: 'A',
       resultPending: false,
     });
   });
@@ -119,7 +141,8 @@ describe('rc23 bugs', () => {
     await wait(10);
     effect.store.dispatch(effect.input.set, 'B');
     await wait(20);
-    expect(effect.calls).toEqual(['A', 'A']);
+    // The second trigger finds A already resolved, and B was never triggered.
+    expect(effect.calls).toEqual(['A']);
   });
 
   it('keeps a trigger dispatched during the debounce window', async () => {
@@ -147,29 +170,22 @@ describe('rc23 bugs', () => {
   });
 
   it('does not run the result effect while the input is invalid', async () => {
-    const store = new Store();
-    const input = addInputState(store, 'good');
-    const factory = getValidatedInputWithResultSignalsFactory<
-      string,
-      string | null,
-      string
-    >().build({ withResultTrigger: true });
-    factory.setup(store);
-    store.connect(input.id, factory.input.input);
-    const saved: string[] = [];
-    store.addEffect(factory.effects.validation, (value: string) =>
-      of(value.startsWith('bad') ? 'invalid' : null),
-    );
-    store.addEffect(factory.effects.result, (value: string) => {
-      saved.push(value);
-      return of(`${value}_saved`);
-    });
-    store.getBehavior(factory.output.combined).subscribe();
+    const form = setupValidatedSave(0);
     await wait(10);
-    store.dispatch(input.set, 'bad-edit');
+    form.store.dispatch(form.input.set, 'bad-edit');
     await wait(10);
-    store.dispatch(factory.input.resultTrigger);
+    form.save();
     await wait(20);
-    expect(saved).toEqual([]);
+    expect(form.saved).toEqual([]);
+  });
+
+  it('runs a result trigger once the current input is validated', async () => {
+    const form = setupValidatedSave(20);
+    await wait(30);
+    form.store.dispatch(form.input.set, 'better');
+    await wait(5);
+    form.save();
+    await wait(50);
+    expect(form.saved).toEqual(['better']);
   });
 });
