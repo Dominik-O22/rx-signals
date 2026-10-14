@@ -75,7 +75,10 @@ export type RenameId<T extends object, N1 extends keyof T, N2 extends string> = 
 export type ReplaceId<T extends object, N extends keyof T, ID> = Omit<T, N> &
   Readonly<Record<N, ID>>;
 
-/** Rejects a key that exists already, with a message that says so. */
+/**
+ * Rejects a key that exists already, with a message that says so. Methods cast it back to `K`,
+ * which it is whenever the call compiles.
+ */
 type FreshKey<K extends string, T> = K extends keyof T ? `'${K}' already exists` : K;
 
 /** Keys of config shared by both sides whose types cannot both hold (their intersection is never). */
