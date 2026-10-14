@@ -22,6 +22,7 @@ export { getEventId } from '@rx-signals-next/store';
 export type S = import('@rx-signals-next/store').Store;
 export const lazy = () => import('@rx-signals-next/store');
 export const store = new Store();
+// TODO(rx-signals-v4) R1: RxSignalsStoreModule is not exported by v4. MIGRATION.md, Removed exports.
 export const m = M;
 `,
     );
@@ -64,8 +65,11 @@ declare const source: any;
 const a = getEventId<number>();
 const b = getEventId<string>();
 const c = getEventId<boolean>();
+// TODO(rx-signals-v4) verify B3: typed source events no longer wait one extra macrotask. MIGRATION.md, B3.
 store.addTypedEventSource([a, b], source);
+// TODO(rx-signals-v4) verify B3: typed source events no longer wait one extra macrotask. MIGRATION.md, B3.
 store.addTypedEventSource([a, b], source);
+// TODO(rx-signals-v4) verify B3: typed source events no longer wait one extra macrotask. MIGRATION.md, B3.
 store.addTypedEventSource(
   [a, b, c],
   source,
@@ -113,7 +117,7 @@ new Wiring().connect('x', 'a', false);
     });
     assert.equal(
       output['src/a.ts'],
-      `${v4Header}declare const keep: boolean;\nf.connect('x', 'a', keep);\n`,
+      `${v4Header}declare const keep: boolean;\n${'// TODO(rx-signals-v4) R3: keep flag is not a literal. MIGRATION.md, R3.'}\nf.connect('x', 'a', keep);\n`,
     );
     assert.deepEqual(
       result.manual.map(m => `${m.rule} ${m.file}:${m.line}`),
@@ -234,6 +238,8 @@ export const a = isStateId(ids[0]);
       output['src/a.ts'],
       `import { isStateId, SignalId } from '@rx-signals-next/store';
 declare const ids: SignalId<number>[];
+// TODO(rx-signals-v4) R6: computed argument. MIGRATION.md, R6.
+// TODO(rx-signals-v4) R1: isStateId is not exported by v4. MIGRATION.md, Removed exports.
 export const a = isStateId(ids[0]);
 `,
     );
@@ -416,6 +422,7 @@ declare const NgModule: (m: object) => ClassDecorator;
 declare const TestBed: { configureTestingModule(m: object): void };
 declare const setup: any, other: any;
 
+// TODO(rx-signals-v4) verify B8: the child store now lives and ends with this injector. MIGRATION.md, B8.
 @NgModule({ imports: [other], providers: [other, provideChildStore(setup)] })
 export class FeatureModule {}
 
@@ -439,7 +446,12 @@ export class Widget {}
     const { output, result } = migrateFiles({ 'src/a.ts': input });
     assert.equal(
       output['src/a.ts'],
-      input.replace('@rx-signals/angular-provider', '@rx-signals-next/angular'),
+      input
+        .replace('@rx-signals/angular-provider', '@rx-signals-next/angular')
+        .replace(
+          '@Component',
+          '// TODO(rx-signals-v4) R11: not in an @NgModule. MIGRATION.md, R11.\n// TODO(rx-signals-v4) R1: RxSignalsStoreModule is not exported by v4. MIGRATION.md, Removed exports.\n@Component',
+        ),
     );
     assert.deepEqual(
       result.manual.map(m => `${m.rule} ${m.file}:${m.line}`),
@@ -499,6 +511,35 @@ export class AppModule {}
     assert.deepEqual(
       result.matches.map(m => `${m.rule} ${m.file}:${m.line}`),
       ['R1 src/a.ts:1'],
+    );
+  });
+});
+
+describe('verify markers', () => {
+  test('marks trigger configs, whose semantics v4 fixed', () => {
+    const input = `import { getEffectSignalsFactory } from '@rx-signals/store';
+export const f = getEffectSignalsFactory<number, string>().build({
+  withTrigger: true,
+});
+`;
+    assert.equal(
+      migrateSource(input),
+      `import { getEffectSignalsFactory } from '@rx-signals-next/store';
+export const f = getEffectSignalsFactory<number, string>().build({
+  // TODO(rx-signals-v4) verify B5: trigger semantics changed, check this effect still runs when expected. MIGRATION.md, B5.
+  withTrigger: true,
+});
+`,
+    );
+  });
+
+  test('leaves withTrigger: false alone', () => {
+    const input = `import { getEffectSignalsFactory } from '@rx-signals/store';
+export const f = getEffectSignalsFactory<number, string>().build({ withTrigger: false });
+`;
+    assert.equal(
+      migrateSource(input),
+      input.replace('@rx-signals/store', '@rx-signals-next/store'),
     );
   });
 });

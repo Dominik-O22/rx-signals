@@ -14,7 +14,15 @@
 // Either way the gate passes when the app type-checks, builds, passes its Karma specs, and its
 // selftest report equals baseline-report.json, which was recorded on the published rc23.
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -24,6 +32,7 @@ const fixture = join(repo, 'fixtures', 'angular19-rc23');
 const work = mkdtempSync(join(tmpdir(), 'rxs-fixture-'));
 const app = join(work, 'app');
 const tarballs = join(work, 'tarballs');
+console.log(`fixture gate work dir: ${work}`);
 
 const run = (cmd, args, cwd, options = {}) => {
   console.log(`$ ${cmd} ${args.join(' ')}`);
@@ -50,6 +59,9 @@ if (migrateMode) {
   // The hand edits the codemod leaves, as MIGRATION.md describes them. Its file list is the
   // migration cost on the fixture. It stops applying when the codemod output changes.
   run('git', ['apply', join(repo, 'codemod', 'fixture-hand-edits.patch')], app);
+  // A developer deletes each `verify` marker after checking the behavior; the selftest below is
+  // that check here. R markers stay, so --check fails if the codemod left a site unrewritten.
+  removeVerifyMarkers(join(app, 'src'));
   // The codemod wrote its own v4 names into package.json. They must be the workspace's names.
   const deps = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8')).dependencies;
   const local = ['store', 'angular'].map(dir => {
@@ -65,6 +77,7 @@ if (migrateMode) {
   });
   run('npm', ['pkg', 'set', ...local], app);
   run('npm', ['install', '--no-audit', '--no-fund'], app);
+  // Exits 1 while any marker is left: a compile error (C), or a site the codemod could not rewrite (R).
   run('node', [join(repo, 'codemod', 'migrate-rx-signals.mjs'), app, '--check'], repo);
 } else {
   run('npm', ['install', '--no-save', `@rx-signals/store@file:${tarball('store')}`], app);
@@ -85,10 +98,21 @@ if (report !== baseline) {
   );
   process.exit(1);
 }
+rmSync(work, { recursive: true, force: true }); // a full app copy with node_modules
 const mode = migrateMode ? 'codemod to v4' : 'rc23 app on the fork store';
 console.log(
   `fixture gate passed (${mode}): typecheck, build, karma, selftest report identical to rc23`,
 );
+
+function removeVerifyMarkers(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
+    const path = join(entry.parentPath, entry.name);
+    const source = readFileSync(path, 'utf8');
+    const kept = source.replace(/^[ \t]*\/\/ TODO\(rx-signals-v4\) verify .*\r?\n/gm, '');
+    if (kept !== source) writeFileSync(path, kept);
+  }
+}
 
 function findChrome() {
   for (const name of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {

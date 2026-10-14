@@ -2,7 +2,31 @@
 
 This guide moves an Angular app from `@rx-signals/store@3.0.0-rc23` and `@rx-signals/angular-provider@3.0.0-rc4` to `@rx-signals-next/store` and `@rx-signals-next/angular` (v4).
 
-A script does most of the work. It rewrites the code that changed shape. The compiler then points at every spot the script could not decide, and this guide gives the fix for each message.
+A script does most of the work. It rewrites the code that changed shape. Every spot left for you gets a marker comment, and this guide gives the fix for each one.
+
+## Finding the work left
+
+Every spot that needs you has a comment line directly above it:
+
+```ts
+// TODO(rx-signals-v4) C5: effect error is unknown. MIGRATION.md, C5.
+```
+
+There are three kinds.
+
+| Marker                      | Meaning                                         | When it goes away                               |
+| --------------------------- | ----------------------------------------------- | ----------------------------------------------- |
+| `C1` to `C9`, `C?`          | A compile error. `--check` writes these.        | `--check` removes it once the error is fixed.   |
+| `R1` to `R11`               | A site the script could not rewrite.            | Delete the line after you fix the code.         |
+| `verify B1` to `verify B13` | It compiles, but behaves differently than rc23. | Delete the line after you checked the behavior. |
+
+To find them, use your IDE's TODO list (WebStorm: View, Tool Windows, TODO. VS Code: search for `TODO(rx-signals-v4)`), or run:
+
+```sh
+grep -rn "TODO(rx-signals-v4)" src
+```
+
+`--check` also prints a numbered list of every marker with file and line. The migration is done when `--check` prints "Done".
 
 ## What you need
 
@@ -33,7 +57,7 @@ Run every command in the app folder, the one with `package.json`. The examples a
    node ../migrate-rx-signals.mjs --dry
    ```
 
-   It lists every edit by rule, with file and line. A section "Hand edits" lists the spots it will leave alone.
+   It lists every edit by rule, with file and line. A section "Hand edits" lists the spots it will leave alone. Those get a marker in step 4.
 
 4. Run it. Pass the v4 version you install.
 
@@ -41,7 +65,7 @@ Run every command in the app folder, the one with `package.json`. The examples a
    node ../migrate-rx-signals.mjs --version 4.0.0
    ```
 
-   It rewrites the source files and the two dependencies in `package.json`, then prints a summary per rule.
+   It rewrites the source files and the two dependencies in `package.json`, then prints a summary per rule. It also writes the `R` and `verify` markers.
 
 5. Read the diff. If the app uses Prettier, format the changed files, because some rewritten lines get long.
 
@@ -56,13 +80,13 @@ Run every command in the app folder, the one with `package.json`. The examples a
    npm install
    ```
 
-7. List the compile errors that are left.
+7. Mark and list the work left.
 
    ```sh
    node ../migrate-rx-signals.mjs --check
    ```
 
-   Each error is printed under an entry of this guide, such as `C4`. Fix them with the section "Compile errors after the script". Run `--check` again until it prints "No compile errors".
+   It writes a `C` marker above every compile error and prints a numbered list of all markers. Work through the list with this guide: section `C4` for a `C4` marker, and so on. Run `--check` again after your edits. It removes the markers of fixed errors and lists what is still open. Repeat until it prints "Done".
 
 8. Build, then run the tests. The build also checks the templates, which `--check` does not.
 
@@ -71,7 +95,7 @@ Run every command in the app folder, the one with `package.json`. The examples a
    npx ng test --watch=false
    ```
 
-9. Read the section "Behavior changes without a compile error". Check the places it names.
+9. The `verify` markers are part of the list from step 7. Check each place, then delete its marker line. The section "Behavior changes without a compile error" explains each one.
 
 Running the script a second time changes nothing. If a run stops with "edit the same text", the script found a case it does not handle. No file is written in that case. Report the file and line.
 
@@ -339,21 +363,21 @@ Anything else. The app compiled before, so the migration caused it. Read the mes
 
 ## Behavior changes without a compile error
 
-These compile and run, but behave differently. Most are rc23 bug fixes. Items 3, 7 and 8 are the ones to check in the app.
+These compile and run, but behave differently. Most are rc23 bug fixes. The script puts a `verify` marker on the sites of B3, B5, B6 and B8. B7 matters for tests that relied on state carried over between them.
 
-1. **dispatch.** The promise resolves after the event was delivered, and it never rejects. In rc23 it could reject on a source error, and it resolved about one millisecond later.
-2. **Errors no longer kill state.** A reducer that throws, a source that errors on a state, and an event source that errors no longer break the state or the stream for good. The state keeps its last value. The error goes to Angular's `ErrorHandler`. A derived state whose source errors passes the error to its current subscribers, keeps its last value, and retries the source on the next subscription.
-3. **Typed event sources are one step faster.** rc23 delayed events of `add2TypedEventSource` and the others by one macrotask (`delay(1)`). `addTypedEventSource` does not. Events arrive in the order they were dispatched, across parent and child stores. Check code that relied on a typed source event arriving after a plain dispatch made in the same turn.
-4. **Lifecycles.** `getLifecycleHandle` records everything registered while its callback runs, as in rc23. `end()` now also works after `reset()`.
-5. **Effect factory fixes.** An effect that completes without a value ends `resultPending`. A trigger applies to the input that was current when it was dispatched. A trigger during the debounce time is no longer lost. An input that is equal per `effectInputEquals` no longer cancels a running triggered effect. `invalidate` re-runs a triggered input without a new trigger.
-6. **Validated input with result.** A result trigger while the current input is invalid no longer saves the old valid input.
-7. **Root store per injector.** rc4 kept one root store per page in a module variable. v4 creates one root store per Angular root injector. In tests, every `TestBed` gets a fresh root store, so state no longer leaks from one test into the next.
-8. **Child store per injector.** `provideChildStore` creates the child store when its injector first injects `Store`, not when the module file loads. The parent is the nearest store above it. The child is completed when its injector is destroyed, for example when a lazy route is left. A lazy route that loads again gets a fresh child store with fresh state.
-9. **Setups run once per store.** Setup functions run lazily on the first injection of `Store`, as in rc4. Passing the same setup function to `provideRootStore` in two modules no longer throws. It runs once.
-10. **Ids are objects.** `typeof id` is `'object'`, not `'symbol'`. `String(id)` differs. Ids still work as `Map` and `Set` keys. `id.kind` of an effect id is `'effect'`. rc23's `isEventId` returned `true` for effect ids.
-11. **Id names.** Names set with `setIdName` are gone. `id.name` contains the name given to `get*Id('name')`. Check log output or tests that compared names.
-12. **No subscription leak per event.** rc23 kept about 1.9 KB per dispatched event for every direct `getEventStream` subscriber. v4 does not.
-13. **Child state overrides parent state.** A child store's `addState` for an id that the parent also has now takes over for the child's subscribers.
+- **B1 dispatch.** The promise resolves after the event was delivered, and it never rejects. In rc23 it could reject on a source error, and it resolved about one millisecond later.
+- **B2 Errors no longer kill state.** A reducer that throws, a source that errors on a state, and an event source that errors no longer break the state or the stream for good. The state keeps its last value. The error goes to Angular's `ErrorHandler`. A derived state whose source errors passes the error to its current subscribers, keeps its last value, and retries the source on the next subscription.
+- **B3 Typed event sources are one step faster.** rc23 delayed events of `add2TypedEventSource` and the others by one macrotask (`delay(1)`). `addTypedEventSource` does not. Events arrive in the order they were dispatched, across parent and child stores. Check code that relied on a typed source event arriving after a plain dispatch made in the same turn.
+- **B4 Lifecycles.** `getLifecycleHandle` records everything registered while its callback runs, as in rc23. `end()` now also works after `reset()`.
+- **B5 Effect factory fixes.** An effect that completes without a value ends `resultPending`. A trigger applies to the input that was current when it was dispatched. A trigger during the debounce time is no longer lost. An input that is equal per `effectInputEquals` no longer cancels a running triggered effect. `invalidate` re-runs a triggered input without a new trigger.
+- **B6 Validated input with result.** A result trigger while the current input is invalid no longer saves the old valid input.
+- **B7 Root store per injector.** rc4 kept one root store per page in a module variable. v4 creates one root store per Angular root injector. In tests, every `TestBed` gets a fresh root store, so state no longer leaks from one test into the next.
+- **B8 Child store per injector.** `provideChildStore` creates the child store when its injector first injects `Store`, not when the module file loads. The parent is the nearest store above it. The child is completed when its injector is destroyed, for example when a lazy route is left. A lazy route that loads again gets a fresh child store with fresh state.
+- **B9 Setups run once per store.** Setup functions run lazily on the first injection of `Store`, as in rc4. Passing the same setup function to `provideRootStore` in two modules no longer throws. It runs once.
+- **B10 Ids are objects.** `typeof id` is `'object'`, not `'symbol'`. `String(id)` differs. Ids still work as `Map` and `Set` keys. `id.kind` of an effect id is `'effect'`. rc23's `isEventId` returned `true` for effect ids.
+- **B11 Id names.** Names set with `setIdName` are gone. `id.name` contains the name given to `get*Id('name')`. Check log output or tests that compared names.
+- **B12 No subscription leak per event.** rc23 kept about 1.9 KB per dispatched event for every direct `getEventStream` subscriber. v4 does not.
+- **B13 Child state overrides parent state.** A child store's `addState` for an id that the parent also has now takes over for the child's subscribers.
 
 ## What the fixture app needed
 

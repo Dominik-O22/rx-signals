@@ -4,7 +4,7 @@
 //
 //   node migrate-rx-signals.mjs [app-dir] --dry     print every planned edit, change nothing
 //   node migrate-rx-signals.mjs [app-dir]           write the edits and package.json
-//   node migrate-rx-signals.mjs [app-dir] --check   after `npm install`: list the compile errors left
+//   node migrate-rx-signals.mjs [app-dir] --check   after `npm install`: list and mark the work left
 //
 // Options:
 //   --version <v>        version of the v4 packages written to package.json (default below)
@@ -112,6 +112,7 @@ const REMOVED_EXPORTS = new Set([
  *   edits:   { start, end, text, rule, seq }. A zero-length edit is an insertion.
  *   matches: one line per rewritten site, for --dry and the summary.
  *   manual:  sites a human must edit.
+ *   markers: { pos, text } comment lines to put above a site (see "Markers").
  *   imports: rc23 import declarations and the local names they bind.
  *   addedImports: module -> names that rewritten code now needs.
  */
@@ -124,6 +125,7 @@ function createFileContext(ts, checker, sf, appDir) {
     edits: [],
     matches: [],
     manual: [],
+    markers: [],
     imports: readImports(ts, sf),
     addedImports: new Map(),
   };
@@ -147,6 +149,79 @@ function match(ctx, rule, node, note) {
 
 function manual(ctx, rule, node, note) {
   ctx.manual.push({ rule, file: ctx.file, line: lineOf(ctx, node), note });
+  ctx.markers.push({ pos: node.getStart(ctx.sf), text: markerText(rule, note) });
+}
+
+/** A site that compiles after the script but behaves differently: the developer checks it. */
+function verify(ctx, entry, node, note) {
+  ctx.markers.push({ pos: node.getStart(ctx.sf), text: markerText(entry, note, 'verify') });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Markers. Every spot a human must look at gets a comment line above it, so the work left after
+// the script shows up in the IDE's TODO list and in `grep -rn "TODO(rx-signals-v4)" src`.
+//   R1..R11    the script could not rewrite this site.       Delete the line once you fixed it.
+//   C0..C9     a compile error, written by --check.            --check deletes it once fixed.
+//   verify B*  compiles, but behaves differently than rc23.    Delete the line once checked.
+// `--check` lists every marker that is left, so "done" means it prints none.
+// ---------------------------------------------------------------------------------------------
+const MARKER = 'TODO(rx-signals-v4)';
+const MARKER_LINE = /^[ \t]*\/\/ TODO\(rx-signals-v4\) (verify )?([A-Z][0-9?]+): (.*)$/;
+
+/** `R6: computed argument: see R6 in MIGRATION.md` -> `R6: computed argument. MIGRATION.md, R6.` */
+function markerText(entry, note, kind) {
+  const see = /:?\s*see "?([^"]+?)"?(?: in MIGRATION\.md)?\s*$/.exec(note);
+  const section = see?.[1] ?? entry;
+  const sentence = (see ? note.slice(0, see.index) : note).replace(/[.:]?\s*$/, '');
+  return `// ${MARKER} ${kind === 'verify' ? 'verify ' : ''}${entry}: ${sentence}. MIGRATION.md, ${section}.`;
+}
+
+/**
+ * Puts each marker on its own line above the line holding `pos`, with that line's indent.
+ * Skips a marker that is already there, so running the script again adds nothing.
+ */
+export function addMarkers(source, markers) {
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const byLine = new Map(); // line start -> marker texts, in order
+  for (const { pos, text } of markers) {
+    const lineStart = source.lastIndexOf('\n', pos - 1) + 1;
+    const list = byLine.get(lineStart) ?? [];
+    if (!list.includes(text)) byLine.set(lineStart, [...list, text]);
+  }
+  let output = source;
+  for (const lineStart of [...byLine.keys()].sort((a, b) => b - a)) {
+    const indent = /^[ \t]*/.exec(source.slice(lineStart))[0];
+    const present = new Set(markersAbove(source, lineStart));
+    const lines = byLine.get(lineStart).filter(text => !present.has(text));
+    if (lines.length === 0) continue;
+    const block = lines.map(text => `${indent}${text}${eol}`).join('');
+    output = output.slice(0, lineStart) + block + output.slice(lineStart);
+  }
+  return output;
+}
+
+/** The marker lines directly above the line starting at `lineStart`, trimmed. */
+function markersAbove(source, lineStart) {
+  const found = [];
+  let end = lineStart - 1; // the newline ending the previous line
+  while (end > 0) {
+    const start = source.lastIndexOf('\n', end - 1) + 1;
+    const line = source.slice(start, end).replace(/\r$/, '');
+    if (!MARKER_LINE.test(line)) break;
+    found.push(line.trim());
+    end = start - 1;
+  }
+  return found;
+}
+
+/** Maps an offset in the original text to the text after `edits` (sorted, non-overlapping). */
+function mapOffset(edits, pos) {
+  let shift = 0;
+  for (const edit of edits) {
+    if (edit.end <= pos) shift += edit.text.length - (edit.end - edit.start);
+    else if (edit.start < pos) return edit.start + shift; // pos was inside replaced text
+  }
+  return pos + shift;
 }
 
 function addImport(ctx, module, name) {
@@ -281,6 +356,7 @@ const R2 = {
       insert(ctx, 'R2', only.getEnd(), ' }');
     }
     match(ctx, 'R2', node, `${name.text}(...) -> ${V4.addTypedEventSource}([...], ...)`);
+    verify(ctx, 'B3', node, 'typed source events no longer wait one extra macrotask');
   },
 };
 
@@ -545,6 +621,8 @@ const R11 = {
       moved.map(m => m.call),
     );
     for (const { element, provide } of moved) {
+      if (provide === V4.provideChildStore)
+        verify(ctx, 'B8', element, 'the child store now lives and ends with this injector');
       addImport(ctx, V4.angularPackage, provide);
       match(
         ctx,
@@ -641,6 +719,26 @@ function addProviders(ctx, objectLiteral, importsProperty, calls) {
   if (comma) return insert(ctx, 'R11', last.getEnd() + comma, `${items},`);
   return insert(ctx, 'R11', last.getEnd(), `,${items}`);
 }
+
+/** Not a rewrite: marks trigger configs, whose semantics v4 fixed (MIGRATION.md B5, B6). */
+const TRIGGERS = {
+  id: 'B',
+  title: 'trigger configs to check',
+  visit(node, ctx) {
+    const { ts } = ctx;
+    if (!ts.isPropertyAssignment(node) || !ts.isIdentifier(node.name)) return;
+    if (node.initializer.kind !== ts.SyntaxKind.TrueKeyword) return;
+    if (node.name.text === 'withTrigger')
+      verify(
+        ctx,
+        'B5',
+        node,
+        'trigger semantics changed, check this effect still runs when expected',
+      );
+    if (node.name.text === 'withResultTrigger')
+      verify(ctx, 'B6', node, 'a result trigger now waits for validation of the current input');
+  },
+};
 
 const RULES = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11];
 
@@ -888,7 +986,8 @@ function migratePackageJson(source, version) {
 
 /**
  * Plans (and unless `dry`, writes) the migration of the app in `appDir`.
- * Returns { files: [{ file, path, after }], matches, manual, packageJson: { before, after } | undefined }.
+ * Returns { files: [{ file, path, after }], matches, manual, markers (lines added),
+ * packageJson: { before, after } | undefined }.
  */
 export function migrate({
   appDir,
@@ -909,20 +1008,27 @@ export function migrate({
   const files = [];
   const matches = [];
   const manualSites = [];
+  let markers = 0;
 
   for (const { sf, checker } of appSourceFiles(programs, appDir)) {
     const ctx = createFileContext(ts, checker, sf, appDir);
     const visit = node => {
-      for (const rule of RULES) rule.visit(node, ctx);
+      for (const rule of [...RULES, TRIGGERS]) rule.visit(node, ctx);
       ts.forEachChild(node, visit);
     };
     visit(sf);
     if (ctx.imports.declarations.length > 0 || ctx.addedImports.size > 0) finishImports(ctx);
     matches.push(...ctx.matches);
     manualSites.push(...ctx.manual);
-    if (ctx.edits.length === 0) continue;
-    const after = applyEdits(ctx.file, sf.text, ctx.edits);
+    if (ctx.edits.length === 0 && ctx.markers.length === 0) continue;
+    const edited = applyEdits(ctx.file, sf.text, ctx.edits);
+    const ordered = [...ctx.edits].sort((a, b) => a.start - b.start);
+    const after = addMarkers(
+      edited,
+      ctx.markers.map(m => ({ ...m, pos: mapOffset(ordered, m.pos) })),
+    );
     if (after !== sf.text) files.push({ file: ctx.file, path: sf.fileName, after });
+    markers += countMarkers(after) - countMarkers(sf.text);
   }
 
   const packageAfter = migratePackageJson(packageSource, version);
@@ -933,8 +1039,10 @@ export function migrate({
     for (const f of files) writeFileSync(f.path, f.after);
     if (packageJson) writeFileSync(packagePath, packageJson.after);
   }
-  return { files, matches, manual: manualSites, packageJson };
+  return { files, matches, manual: manualSites, markers, packageJson };
 }
+
+const countMarkers = source => source.split(MARKER).length - 1;
 
 function printMigration(result, { dry }) {
   const byRule = new Map();
@@ -969,6 +1077,11 @@ function printMigration(result, { dry }) {
       `\nHand edits (${result.manual.length} sites in ${new Set(result.manual.map(m => m.file)).size} files):`,
     );
     for (const m of result.manual) console.log(`  ${m.file}:${m.line}  [${m.rule}] ${m.note}`);
+  }
+  if (result.markers > 0) {
+    console.log(
+      `\n${dry ? 'Would mark' : 'Marked'} ${result.markers} sites with "// ${MARKER}". Find them: grep -rn "${MARKER}" src`,
+    );
   }
   if (result.files.length === 0 && !result.packageJson) console.log('Nothing to change.');
   else if (!dry) console.log('\nNext: npm install, then run this script again with --check.');
@@ -1015,23 +1128,84 @@ const CHECKS = [
 export const classifyDiagnostic = (code, message) =>
   CHECKS.find(c => c.test(code, message))?.id ?? 'C?';
 
+const checkTitle = entry =>
+  CHECKS.find(c => c.id === entry)?.title ??
+  'not a known migration error, read the compiler message';
+
+/**
+ * Lists the work left after the migration and keeps the markers in sync with it: compile-error
+ * markers (C*) are rewritten from the current errors, so a fixed error loses its marker. Returns
+ * { errors, open }, where `open` is every marker in the app (C*, R* and verify B*).
+ */
 export function check({ appDir, projects = defaultProjects(appDir) }) {
   const ts = loadTypeScript(appDir);
+  const paths = appSourceFiles(createPrograms(ts, appDir, projects), appDir).map(
+    f => f.sf.fileName,
+  );
+  for (const path of paths) rewriteFile(path, stripCompileMarkers);
+
+  const errors = compileErrors(ts, appDir, projects);
+  for (const path of new Set(errors.map(e => e.path))) {
+    const markers = errors
+      .filter(e => e.path === path)
+      .map(e => ({ pos: e.start, text: markerText(e.entry, checkTitle(e.entry)) }));
+    rewriteFile(path, source => addMarkers(source, markers));
+  }
+  return { errors, open: paths.flatMap(path => openMarkers(appDir, path)) };
+}
+
+function rewriteFile(path, change) {
+  const before = readFileSync(path, 'utf8');
+  const after = change(before);
+  if (after !== before) writeFileSync(path, after);
+}
+
+function stripCompileMarkers(source) {
+  return source
+    .split(/(?<=\n)/)
+    .filter(line => {
+      const marker = MARKER_LINE.exec(line.replace(/\r?\n$/, ''));
+      return !(marker && !marker[1] && marker[2].startsWith('C'));
+    })
+    .join('');
+}
+
+/** Every marker in one file, pointing at the code line below its block of markers. */
+function openMarkers(appDir, path) {
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  const open = [];
+  lines.forEach((line, index) => {
+    const marker = MARKER_LINE.exec(line);
+    if (!marker) return;
+    let code = index + 1;
+    while (code < lines.length && MARKER_LINE.test(lines[code])) code += 1;
+    open.push({
+      file: relative(appDir, path),
+      line: code + 1,
+      entry: marker[2],
+      verify: Boolean(marker[1]),
+      note: marker[3].replace(/ MIGRATION\.md, [^.]+\.$/, ''),
+    });
+  });
+  return open;
+}
+
+function compileErrors(ts, appDir, projects) {
   const seen = new Set();
   const errors = [];
   for (const program of createPrograms(ts, appDir, projects)) {
     for (const d of ts.getPreEmitDiagnostics(program)) {
       const isError = d.category === ts.DiagnosticCategory.Error;
       if (!isError || !d.file || !isAppFile(appDir, d.file.fileName)) continue;
-      const file = relative(appDir, d.file.fileName);
-      const line = d.file.getLineAndCharacterOfPosition(d.start ?? 0).line + 1;
-      const message = ts.flattenDiagnosticMessageText(d.messageText, ' ');
-      const key = `${file}:${d.start}:${d.code}`;
+      const key = `${d.file.fileName}:${d.start}:${d.code}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      const message = ts.flattenDiagnosticMessageText(d.messageText, ' ');
       errors.push({
-        file,
-        line,
+        path: d.file.fileName,
+        file: relative(appDir, d.file.fileName),
+        start: d.start ?? 0,
+        line: d.file.getLineAndCharacterOfPosition(d.start ?? 0).line + 1,
         code: d.code,
         message,
         entry: classifyDiagnostic(d.code, message),
@@ -1041,23 +1215,31 @@ export function check({ appDir, projects = defaultProjects(appDir) }) {
   return errors;
 }
 
-function printCheck(errors) {
-  if (errors.length === 0) {
-    console.log('No compile errors. Run `ng build` too: templates are only checked there.');
+function printCheck({ errors, open }) {
+  if (open.length === 0) {
+    console.log('Done: no compile errors and no TODO(rx-signals-v4) markers left.');
+    console.log('Run `npm run build` and the tests too: templates are only checked by the build.');
     return;
   }
-  const titles = Object.fromEntries([
-    ...CHECKS.map(c => [c.id, c.title]),
-    ['C?', 'not a known migration error'],
-  ]);
-  const entries = [...new Set(errors.map(e => e.entry))].sort();
-  for (const entry of entries) {
-    console.log(`\n${entry} ${titles[entry]} (MIGRATION.md, section ${entry})`);
-    for (const e of errors.filter(x => x.entry === entry))
-      console.log(`  ${e.file}:${e.line}  TS${e.code} ${e.message}`);
-  }
-  const files = new Set(errors.map(e => e.file));
-  console.log(`\n${errors.length} errors in ${files.size} files.`);
+  const sorted = [...open].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+  console.log(`${open.length} open items. Each has a "// ${MARKER}" line above it in the code.`);
+  console.log(`Find them in your IDE's TODO list, or: grep -rn "${MARKER}" src\n`);
+  sorted.forEach((item, index) => {
+    const label = `${item.verify ? 'verify ' : ''}${item.entry}`;
+    console.log(
+      `${String(index + 1).padStart(3)}. ${item.file}:${item.line}  ${label}: ${item.note}`,
+    );
+  });
+  const count = predicate => open.filter(predicate).length;
+  console.log(`
+  ${count(o => o.entry.startsWith('C'))} compile errors (C*): fix the code; --check removes the line once the error is gone.
+  ${count(o => o.entry.startsWith('R'))} sites the script could not rewrite (R*): fix the code, then delete the line.
+  ${count(o => o.verify)} behavior changes to check (verify B*): check the behavior, then delete the line.
+Each entry is a section of MIGRATION.md. Run --check again after your edits.`);
+  if (errors.length > 0)
+    console.log(
+      `\n${errors.length} compile errors in ${new Set(errors.map(e => e.file)).size} files.`,
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1076,9 +1258,9 @@ function main() {
   const appDir = resolve(positionals[0] ?? '.');
   const projects = values.project ?? defaultProjects(appDir);
   if (values.check) {
-    const errors = check({ appDir, projects });
-    printCheck(errors);
-    process.exitCode = errors.length === 0 ? 0 : 1;
+    const result = check({ appDir, projects });
+    printCheck(result);
+    process.exitCode = result.open.length === 0 ? 0 : 1;
     return;
   }
   printMigration(migrate({ appDir, projects, version: values.version, dry: values.dry }), {
