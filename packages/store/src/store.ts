@@ -1,9 +1,10 @@
-import { asyncScheduler, BehaviorSubject, merge, NEVER, type Observable, of } from 'rxjs';
+import { asyncScheduler, BehaviorSubject, EMPTY, merge, NEVER, type Observable, of } from 'rxjs';
 import {
   delay,
   distinctUntilChanged,
   filter,
   map,
+  mergeMap,
   share,
   switchMap,
   take,
@@ -269,7 +270,18 @@ export class Store {
   ): void {
     const sourceObservable = this.getEventStream(eventIdentifier).pipe(
       withLatestFrom(this.getBehavior(stateIdentifier)),
-      map(([event, state]) => reducer(state, event)),
+      mergeMap(([event, state]) => {
+        try {
+          return of(reducer(state, event));
+        } catch (error) {
+          // Erroring the source would complete the behavior and lose the state for good.
+          // Keep the previous state and report the error like any other uncaught exception.
+          setTimeout(() => {
+            throw error;
+          });
+          return EMPTY;
+        }
+      }),
     );
     this.getBehaviorControlledSubject(stateIdentifier).addSource(
       new SourceObservable<ToBehaviorIdValueType<SID>>(eventIdentifier, sourceObservable, false),
