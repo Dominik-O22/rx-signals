@@ -221,7 +221,7 @@ imports: [RxSignalsStoreModule]                                 ->  providers: [
 
 It appends to an existing `providers` array, or adds one after `imports`. `Store` is still the injection token, so `inject(Store)` and constructor injection do not change.
 
-Not rewritten: the module anywhere else, for example in a standalone `@Component` or in `importProvidersFrom(...)`. Put `provideRootStore(...)` or `provideChildStore(...)` in the matching `providers` array by hand. A `@Component` gets its own child store with `providers: [provideChildStore(...)]`.
+Not rewritten: the module anywhere else, for example in a standalone `@Component` or in `importProvidersFrom(...)`. Put `provideRootStore(...)` or `provideChildStore(...)` in the matching `providers` array by hand. Both return environment providers, so they go into an `@NgModule`, a route's `providers`, or `bootstrapApplication`. A `@Component`'s `providers` does not accept them. For a standalone component, provide the child store on the route that loads it.
 
 ### R12 package.json
 
